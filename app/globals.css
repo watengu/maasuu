@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* マァスゥ テーマトークン（土台の構造は Enaema の globals.css を踏襲。
+   値は まぁ＆すぅ の淡い世界観に寄せた、やわらかいローズ基調）
+   --accent-gold は Enaema 側の命名、--gold は マァスゥ側の命名（同値で併記） */
+:root {
+  --bg: #fdf7f4;
+  --surface: #ffffff;
+  --text: #38303a;
+  --muted: #9a8b93;
+  --line: #f0e1d8;
+  --accent: #c25e7e;
+  --accent-strong: #a84a68;
+  --accent-soft: #fbe9ef;
+  --accent-gold: #c9a227;
+  --gold: #c9a227;
+
+  --background: var(--bg);
+  --foreground: var(--text);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body), "Hiragino Kaku Gothic ProN", sans-serif;
+}
