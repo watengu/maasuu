@@ -1,7 +1,9 @@
 "use client";
 
 // プロフィール編集: 基本情報 / カードの追加・削除 / 宣伝ページ ON・OFF と URL /
-// 紹介セットの作成（2本で1セット、ジャンル必須。紹介者クールダウン = 前回作成から3日）。
+// 招待の作成（一般ユーザーは直接招待のみ = リンク1本で本人と相手が直接繋がる。
+// 橋渡しセット = リンク2本で2人を繋ぐ形は運営のみ。ジャンル必須。
+// クールダウン = 一般ユーザーは前回作成から3日、運営は無制限。Ao 決定 2026-10-28）。
 import { useCallback, useEffect, useState } from "react";
 import { getSession, type Session } from "../auth-client";
 import AppHeader from "../app-header";
@@ -304,8 +306,9 @@ export default function MeClient() {
     }
   };
 
+  // 橋渡しセット（リンク2本）の作成は運営のみ（Ao 決定 2026-10-28: ユーザーは橋渡ししない）。
   const createSet = async () => {
-    if (!canCreateSet) return;
+    if (!canCreateSet || !me.is_operator) return;
     setBusy(true);
     setNotice("");
     try {
@@ -328,10 +331,12 @@ export default function MeClient() {
     }
   };
 
-  // 運営ダイレクト招待: 運営自身が当事者Aとして着席済みのセット。
-  // 友人は code_b のリンク1本だけを受け取り、参加した瞬間に運営との繋がりが始まる。
+  // ダイレクト招待: 紹介者自身が当事者Aとして着席済みのセット。
+  // 相手は code_b のリンク1本だけを受け取り、参加した瞬間に紹介者との繋がりが始まる。
+  // 一般ユーザーの紹介はこの形だけ（橋渡しは運営のみ）。クールダウンは canCreateSet が
+  // 一般ユーザーにのみ適用する（運営は無制限）。
   const createDirectSet = async () => {
-    if (!canCreateSet || !me.is_operator) return;
+    if (!canCreateSet) return;
     setBusy(true);
     setNotice("");
     try {
@@ -346,7 +351,11 @@ export default function MeClient() {
         direct: true,
         joined_by_a: session.userId,
       });
-      setNotice("運営用招待を作りました。「招待リンク」を友人に渡してください。参加した瞬間に、あなたとの繋がりが始まります。");
+      setNotice(
+        me.is_operator
+          ? "運営用招待を作りました。「招待リンク」を友人に渡してください。参加した瞬間に、あなたとの繋がりが始まります。"
+          : "招待を作りました。「招待リンク」を相手に渡してください。参加した瞬間に、あなたとの繋がりが始まります。",
+      );
       await load();
     } catch (e) {
       console.error(e);
@@ -582,7 +591,7 @@ export default function MeClient() {
             <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
               あなたは「ログインなし」で参加しています。情報はこの端末のブラウザに
               保存されているため、別の端末やブラウザでは開けません。
-              ゲストの間は、紹介セットの作成と宣伝ページは使えません。
+              ゲストの間は、招待の作成と宣伝ページは使えません。
             </p>
           </section>
         )}
@@ -618,13 +627,23 @@ export default function MeClient() {
 
         {!me.is_guest && (
         <section className={sectionCls} style={sectionStyle}>
-          <h2 className="text-sm font-bold">紹介セット（リンク2本で1セット）</h2>
-          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            紹介は、あなたが2人を繋ぐ「橋渡し」です。セットを作るとリンクが2本できて、
-            2人に1本ずつ渡します。両方がリンクを開くと、その2人の繋がりが始まります
-            （連動スタート）。あなた自身は繋がりには入りません。
-            {me.is_operator ? "運営アカウントは制限なく作れます。" : "紹介セットは3日に1つまで作れます。"}
-          </p>
+          <h2 className="text-sm font-bold">
+            {me.is_operator ? "紹介セット（リンク2本で1セット）" : "招待リンク"}
+          </h2>
+          {me.is_operator ? (
+            <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+              紹介は、あなたが2人を繋ぐ「橋渡し」です。セットを作るとリンクが2本できて、
+              2人に1本ずつ渡します。両方がリンクを開くと、その2人の繋がりが始まります
+              （連動スタート）。あなた自身は繋がりには入りません。
+              運営アカウントは制限なく作れます。
+            </p>
+          ) : (
+            <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+              紹介は、あなたと相手が直接繋がる「招待」です。招待リンクを1本作って相手に渡すと、
+              相手が参加した瞬間に、あなたとの繋がりが始まります。
+              招待は3日に1つまで作れます。
+            </p>
+          )}
           <p className="mt-3 text-xs font-bold">テーマのジャンル（必須）</p>
           <div className="mt-2 grid grid-cols-3 gap-2">
             {GENRE_OPTIONS.map((g) => (
@@ -648,16 +667,18 @@ export default function MeClient() {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            disabled={busy || !canCreateSet}
-            onClick={createSet}
-            className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-40"
-            style={{ background: "var(--accent)" }}
-          >
-            {canCreateSet ? "紹介セットを作る" : `次に作れるまで ${formatRemaining(cooldownMs)}`}
-          </button>
           {me.is_operator && (
+            <button
+              type="button"
+              disabled={busy || !canCreateSet}
+              onClick={createSet}
+              className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-40"
+              style={{ background: "var(--accent)" }}
+            >
+              {canCreateSet ? "紹介セットを作る" : `次に作れるまで ${formatRemaining(cooldownMs)}`}
+            </button>
+          )}
+          {me.is_operator ? (
             <>
               <button
                 type="button"
@@ -672,6 +693,21 @@ export default function MeClient() {
                 運営用招待は、あなた自身が相手になる招待です。リンクは1本だけできて、
                 開いた人が参加した瞬間に、あなたとの繋がりが始まります（橋渡しではありません）。
                 運営用招待に本数の制限はありません。
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={busy || !canCreateSet}
+                onClick={createDirectSet}
+                className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-40"
+                style={{ background: "var(--accent)" }}
+              >
+                {canCreateSet ? "自分と繋がる招待を作る" : `次に作れるまで ${formatRemaining(cooldownMs)}`}
+              </button>
+              <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--muted)" }}>
+                招待リンクは1本だけできて、開いた人が参加した瞬間に、あなたとの繋がりが始まります。
               </p>
             </>
           )}
@@ -698,7 +734,7 @@ export default function MeClient() {
                             className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
                             style={{ background: "var(--accent)" }}
                           >
-                            運営用招待
+                            {me.is_operator ? "運営用招待" : "招待"}
                           </span>
                         )}
                         {formatDateTimeJST(st.created_at)} 作成
