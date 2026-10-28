@@ -18,6 +18,8 @@ export type Session = {
   expiresAt: number; // epoch ms
   userId: string;
   email: string;
+  /** 匿名サインイン（ログインなし窓口）のゲストなら true */
+  isGuest: boolean;
 };
 
 function loadRaw(): Session | null {
@@ -66,6 +68,7 @@ async function refresh(s: Session): Promise<Session | null> {
       expiresAt: Date.now() + Number(j.expires_in ?? 3600) * 1000,
       userId: j?.user?.id ?? s.userId,
       email: j?.user?.email ?? s.email,
+      isGuest: Boolean(j?.user?.is_anonymous ?? s.isGuest),
     };
     save(next);
     return next;
@@ -92,6 +95,40 @@ export function signInWithGoogle() {
   window.location.href =
     `${SUPABASE_URL}/auth/v1/authorize?provider=google` +
     `&redirect_to=${encodeURIComponent(redirectTo)}`;
+}
+
+// ログインなし窓口（運営発行の紹介セット専用）: Supabase の匿名サインイン。
+// 空ボディの signup で匿名ユーザーが発行され、通常ユーザーと同じ role(authenticated)
+// のセッションが返る。以後の RLS・RPC は通常ユーザーと全く同じに効く。
+// identity はこの端末・このブラウザの localStorage に宿る（消去・機種変更で失われる）。
+export async function signInAsGuest(): Promise<boolean> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) return false;
+    const j = await res.json();
+    const accessToken = j?.access_token;
+    const refreshToken = j?.refresh_token;
+    const userId = j?.user?.id ?? "";
+    if (!accessToken || !refreshToken || !userId) return false;
+    save({
+      accessToken,
+      refreshToken,
+      expiresAt: Date.now() + Number(j?.expires_in ?? 3600) * 1000,
+      userId,
+      email: j?.user?.email ?? "",
+      isGuest: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function signOut() {
@@ -146,6 +183,7 @@ export async function saveSessionFromHash(): Promise<boolean> {
     expiresAt: Date.now() + expiresIn * 1000,
     userId,
     email,
+    isGuest: false,
   });
   return true;
 }

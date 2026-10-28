@@ -2,6 +2,7 @@
 
 // 初回プロフィール作成フォーム（性別はルール分岐の土台なので必須・自己申告）
 import { useState } from "react";
+import { getSession } from "./auth-client";
 import { generatePromoCode } from "../lib/engine";
 import { insertRow } from "../lib/supabase";
 import type { Gender, Profile } from "../lib/types";
@@ -32,6 +33,8 @@ export default function ProfileCreateForm({
     }
     setBusy(true);
     try {
+      // 匿名サインイン（ログインなし窓口）から来た場合はゲストとして記録する
+      const s = await getSession();
       const profile = await insertRow<Profile>("profiles", {
         id: userId,
         display_name: name.trim(),
@@ -39,6 +42,7 @@ export default function ProfileCreateForm({
         status_line: statusLine.trim(),
         icon_url: iconUrl.trim() || null,
         promo_code: generatePromoCode(),
+        is_guest: Boolean(s?.isGuest),
       });
       onCreated(profile);
     } catch (e) {
