@@ -186,7 +186,7 @@ export default function HomeClient() {
               <Link href="/me" className="font-bold underline underline-offset-2">
                 プロフィール
               </Link>
-              から紹介セット（リンク2本）を作って、2人に1本ずつ渡してください（作成は3日に1回まで）。
+              から紹介セット（リンク2本）を作って、2人に1本ずつ渡してください{phase.me.is_operator ? "。" : "（作成は3日に1回まで）。"}
             </p>
           </div>
         ) : (
