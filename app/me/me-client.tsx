@@ -20,7 +20,106 @@ import {
   selectRows,
   updateRows,
 } from "../../lib/supabase";
+import qrcodegen from "../../lib/qrcodegen";
 import type { Gender, Genre, IntroSet, Profile, ProfileCard } from "../../lib/types";
+
+// URL から QR コードの SVG をこの端末内で生成する（外部サービスは使わない）。
+function QrSvg({ url }: { url: string }) {
+  let size = 0;
+  let d = "";
+  try {
+    const qr = qrcodegen.QrCode.encodeText(url, qrcodegen.QrCode.Ecc.MEDIUM);
+    size = qr.size;
+    for (let y = 0; y < qr.size; y++) {
+      for (let x = 0; x < qr.size; x++) {
+        if (qr.getModule(x, y)) d += `M${x} ${y}h1v1H${x}z`;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return (
+    <svg
+      width={180}
+      height={180}
+      viewBox={`-4 -4 ${size + 8} ${size + 8}`}
+      className="mt-2 rounded-lg"
+      style={{ background: "#fff" }}
+      role="img"
+      aria-label="QRコード"
+    >
+      <path d={d} fill="#000" />
+    </svg>
+  );
+}
+
+// リンクのコピー／共有ボタン（Ao 指示 2026-10-28: コピペ機能と、送り先を選べる共有の両方）。
+function LinkActions({ url }: { url: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
+  const [showQr, setShowQr] = useState(false);
+  const copy = async () => {
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(url);
+      ok = true;
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    setCopyState(ok ? "ok" : "fail");
+    window.setTimeout(() => setCopyState("idle"), 2000);
+  };
+  const share = async () => {
+    if (typeof navigator !== "undefined" && "share" in navigator) {
+      try {
+        await navigator.share({ url });
+      } catch {
+        // 共有をキャンセルした場合は何もしない
+      }
+    } else {
+      await copy();
+    }
+  };
+  const btnCls = "rounded-full border px-3 py-1 text-[11px] font-bold";
+  const btnStyle = {
+    borderColor: "var(--line)",
+    background: "var(--surface)",
+    color: "var(--accent-strong)",
+  } as const;
+  return (
+    <>
+      <span className="mt-1 flex gap-2">
+        <button type="button" onClick={copy} className={btnCls} style={btnStyle}>
+          {copyState === "ok"
+            ? "コピー済み"
+            : copyState === "fail"
+              ? "コピーできませんでした"
+              : "コピー"}
+        </button>
+        <button type="button" onClick={share} className={btnCls} style={btnStyle}>
+          送る
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowQr((v) => !v)}
+          className={btnCls}
+          style={btnStyle}
+        >
+          QR
+        </button>
+      </span>
+      {showQr && <QrSvg url={url} />}
+    </>
+  );
+}
 
 export default function MeClient() {
   const [session, setSession] = useState<Session | null>(null);
@@ -65,13 +164,16 @@ export default function MeClient() {
     setIconUrl(profile.icon_url ?? "");
     setStatusLine(profile.status_line);
     setGender(profile.gender ?? "female");
-    const cs = await selectRows<ProfileCard>(
-      `profile_cards?user_id=eq.${s.userId}&order=sort.asc,id.asc&select=*`,
-    );
+    // カードと紹介セットは互いに独立（どちらも userId のみに依存）なので並列取得する。
+    const [cs, ss] = await Promise.all([
+      selectRows<ProfileCard>(
+        `profile_cards?user_id=eq.${s.userId}&order=sort.asc,id.asc&select=*`,
+      ),
+      selectRows<IntroSet>(
+        `introduction_sets?introducer_id=eq.${s.userId}&order=created_at.desc&select=*`,
+      ),
+    ]);
     setCards(cs);
-    const ss = await selectRows<IntroSet>(
-      `introduction_sets?introducer_id=eq.${s.userId}&order=created_at.desc&select=*`,
-    );
     setSets(ss);
     const joinedIds = Array.from(
       new Set(
@@ -504,9 +606,12 @@ export default function MeClient() {
             </button>
           </div>
           {me.promo_on && promoUrl && (
-            <p className="mt-2 break-all rounded-xl px-3 py-2 text-xs" style={{ background: "var(--accent-soft)" }}>
-              {promoUrl}
-            </p>
+            <>
+              <p className="mt-2 break-all rounded-xl px-3 py-2 text-xs" style={{ background: "var(--accent-soft)" }}>
+                {promoUrl}
+              </p>
+              <LinkActions url={promoUrl} />
+            </>
           )}
         </section>
         )}
@@ -609,6 +714,7 @@ export default function MeClient() {
                             招待リンク ・ {urlStatus(st, st.joined_by_b)}
                           </p>
                           <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
+                          <LinkActions url={`${origin}/i/${st.code_b}`} />
                         </div>
                       ) : (
                         <>
@@ -617,12 +723,14 @@ export default function MeClient() {
                               リンクA ・ {urlStatus(st, st.joined_by_a)}
                             </p>
                             <p className="break-all text-xs">{`${origin}/i/${st.code_a}`}</p>
+                            <LinkActions url={`${origin}/i/${st.code_a}`} />
                           </div>
                           <div>
                             <p className="text-[11px] font-bold">
                               リンクB ・ {urlStatus(st, st.joined_by_b)}
                             </p>
                             <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
+                            <LinkActions url={`${origin}/i/${st.code_b}`} />
                           </div>
                         </>
                       )}
