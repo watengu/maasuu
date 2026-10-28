@@ -31,3 +31,19 @@ body {
   color: var(--text);
   font-family: var(--font-body), "Hiragino Kaku Gothic ProN", sans-serif;
 }
+
+/* トーク画面のスライドイン（右から軽く入る。ジェスチャは持たず、登場アニメーションのみ） */
+@keyframes maasuu-talk-in {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.talk-slide-in {
+  animation: maasuu-talk-in 200ms ease-out;
+}
