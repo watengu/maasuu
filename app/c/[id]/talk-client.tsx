@@ -314,7 +314,11 @@ export default function TalkClient() {
                 テーマ：{genreLabel(conn.genre)}
               </span>
             )}
-            {introducer && `${introducer.display_name} さんの紹介で繋がりました`}
+            {introducer &&
+              // 紹介者が当事者の一方なら直接の招待（ダイレクト）。それ以外は橋渡し経由。
+              ((conn.introducer_id === conn.user_a || conn.introducer_id === conn.user_b) && partner
+                ? `${partner.display_name} さんと繋がりました`
+                : `${introducer.display_name} さんの紹介で繋がりました`)}
           </p>
         )}
         {partner?.status_line && (
