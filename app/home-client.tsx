@@ -46,8 +46,19 @@ export default function HomeClient() {
       const pending = takePendingPath();
       if (pending) setPendingPath(pending);
       try {
-        const me = await selectOne<Profile>(`profiles?id=eq.${session.userId}&select=*`);
+        // プロフィールと繋がり一覧は互いに独立（どちらも userId のみに依存）なので並列取得する。
+        // 元の逐次版の結果を変えないため allSettled を使う: 未作成/バンの判定は繋がり取得の
+        // 成否に影響されず、プロフィール取得の失敗と（プロフィール正常時の）繋がり取得の
+        // 失敗は、元の通り全体の catch へ投げる。
+        const [meRes, connsRes] = await Promise.allSettled([
+          selectOne<Profile>(`profiles?id=eq.${session.userId}&select=*`),
+          selectRows<Connection>(
+            `connections?or=(user_a.eq.${session.userId},user_b.eq.${session.userId})&order=created_at.desc&select=*`,
+          ),
+        ]);
         if (cancelled) return;
+        if (meRes.status === "rejected") throw meRes.reason;
+        const me = meRes.value;
         if (!me) {
           setPhase({ kind: "needProfile", session });
           return;
@@ -56,9 +67,8 @@ export default function HomeClient() {
           setPhase({ kind: "banned" });
           return;
         }
-        const conns = await selectRows<Connection>(
-          `connections?or=(user_a.eq.${session.userId},user_b.eq.${session.userId})&order=created_at.desc&select=*`,
-        );
+        if (connsRes.status === "rejected") throw connsRes.reason;
+        const conns = connsRes.value;
         const relatedIds = Array.from(
           new Set(
             conns.flatMap((c) => [
