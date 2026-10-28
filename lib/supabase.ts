@@ -6,7 +6,10 @@
 import { getSession } from "../app/auth-client";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+// Publishable キーは公開前提の鍵（データ保護は RLS 側）なので直書きする。
+// 2026-10-28: Vercel の env（NEXT_PUBLIC_SUPABASE_ANON_KEY）に REST URL が誤って
+// 入っていて全 API が Invalid API key になりログイン不能になったため、env 参照を廃止。
+const SUPABASE_ANON_KEY = "sb_publishable_TT6R4e0toQOQ14fM1VgAkA_EgJTUb6O";
 
 type RestOptions = {
   method?: string;
