@@ -11,6 +11,10 @@ export type Profile = {
   promo_on: boolean;
   promo_code: string | null;
   banned: boolean;
+  /** 運営アカウント（発行した紹介セットに「ログインなし窓口」が出る） */
+  is_operator: boolean;
+  /** 匿名サインインで入ったゲスト（紹介セットの発行はできない） */
+  is_guest: boolean;
   created_at: string;
 };
 
@@ -36,6 +40,8 @@ export type IntroSet = {
   joined_by_a: string | null;
   joined_by_b: string | null;
   genre: Genre;
+  /** 取り消し（失効）の時刻。null なら有効 */
+  voided_at: string | null;
   created_at: string;
 };
 
@@ -58,6 +64,10 @@ export type IntroPreview = {
   slot?: "a" | "b";
   slot_taken?: boolean;
   both_filled?: boolean;
+  /** 運営発行のセットかどうか（true なら未ログインでも窓口から入れる） */
+  guest_ok?: boolean;
+  /** セットの有効状態。voided=取り消し済み、expired=72時間経過（運営セット・両方未参加） */
+  availability?: "ok" | "voided" | "expired";
   introducer?: {
     display_name: string;
     icon_url: string | null;
