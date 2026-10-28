@@ -122,7 +122,8 @@ export default function MeClient() {
   // ゲストは紹介セットを作れない（SQL ポリシーでも遮断している）。
   const lastSetAt = sets.find((x) => !x.voided_at)?.created_at ?? null;
   const cooldownMs = introCooldownRemainingMs(lastSetAt);
-  const canCreateSet = cooldownMs <= 0 && !me.is_guest;
+  // 運営アカウントには本数縛り（クールダウン）を適用しない（Ao 指示 2026-10-28）。
+  const canCreateSet = (me.is_operator || cooldownMs <= 0) && !me.is_guest;
 
   const saveProfile = async () => {
     setBusy(true);
@@ -225,13 +226,48 @@ export default function MeClient() {
     }
   };
 
-  const voidSet = async (setId: string) => {
-    if (!window.confirm("この紹介セットを取り消しますか？リンクは両方とも無効になります。")) return;
+  // 運営ダイレクト招待: 運営自身が当事者Aとして着席済みのセット。
+  // 友人は code_b のリンク1本だけを受け取り、参加した瞬間に運営との繋がりが始まる。
+  const createDirectSet = async () => {
+    if (!canCreateSet || !me.is_operator) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const codeA = generateIntroCode();
+      let codeB = generateIntroCode();
+      while (codeB === codeA) codeB = generateIntroCode();
+      await insertRow<IntroSet>("introduction_sets", {
+        introducer_id: session.userId,
+        code_a: codeA,
+        code_b: codeB,
+        genre: newGenre,
+        direct: true,
+        joined_by_a: session.userId,
+      });
+      setNotice("運営用招待を作りました。「招待リンク」を友人に渡してください。参加した瞬間に、あなたとの繋がりが始まります。");
+      await load();
+    } catch (e) {
+      console.error(e);
+      setNotice("作成できませんでした。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const voidSet = async (st: IntroSet) => {
+    if (
+      !window.confirm(
+        st.direct
+          ? "この招待を取り消しますか？招待リンクは無効になります。"
+          : "この紹介セットを取り消しますか？リンクは両方とも無効になります。",
+      )
+    )
+      return;
     setBusy(true);
     setNotice("");
     try {
       const res = await rpc<{ ok: boolean; reason?: string }>("void_intro_set", {
-        p_set_id: setId,
+        p_set_id: st.id,
       });
       if (!res.ok) {
         setNotice(
@@ -255,10 +291,11 @@ export default function MeClient() {
   const SET_EXPIRE_MS = 72 * 60 * 60 * 1000;
   const setVoidReason = (st: IntroSet): string | null => {
     if (st.voided_at) return "取り消し";
+    // サーバー側の失効条件と一致させる: 運営セットは「接続が成立しないまま72時間」で失効
+    // （ダイレクト招待は joined_by_a が最初から入っているため、両方 null の条件では失効しない）。
     if (
       me.is_operator &&
-      !st.joined_by_a &&
-      !st.joined_by_b &&
+      !(st.joined_by_a && st.joined_by_b) &&
       Date.now() - new Date(st.created_at).getTime() > SET_EXPIRE_MS
     ) {
       return "期限切れ";
@@ -481,7 +518,7 @@ export default function MeClient() {
             紹介は、あなたが2人を繋ぐ「橋渡し」です。セットを作るとリンクが2本できて、
             2人に1本ずつ渡します。両方がリンクを開くと、その2人の繋がりが始まります
             （連動スタート）。あなた自身は繋がりには入りません。
-            紹介セットは3日に1つまで作れます。
+            {me.is_operator ? "運営アカウントは制限なく作れます。" : "紹介セットは3日に1つまで作れます。"}
           </p>
           <p className="mt-3 text-xs font-bold">テーマのジャンル（必須）</p>
           <div className="mt-2 grid grid-cols-3 gap-2">
@@ -515,6 +552,24 @@ export default function MeClient() {
           >
             {canCreateSet ? "紹介セットを作る" : `次に作れるまで ${formatRemaining(cooldownMs)}`}
           </button>
+          {me.is_operator && (
+            <>
+              <button
+                type="button"
+                disabled={busy || !canCreateSet}
+                onClick={createDirectSet}
+                className="mt-2 w-full rounded-full border py-2.5 text-sm font-bold disabled:opacity-40"
+                style={{ borderColor: "var(--accent)", color: "var(--accent-strong)", background: "var(--surface)" }}
+              >
+                運営用：自分と繋がる招待を作る
+              </button>
+              <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--muted)" }}>
+                運営用招待は、あなた自身が相手になる招待です。リンクは1本だけできて、
+                開いた人が参加した瞬間に、あなたとの繋がりが始まります（橋渡しではありません）。
+                運営用招待に本数の制限はありません。
+              </p>
+            </>
+          )}
           {sets.length > 0 && (
             <ul className="mt-4 space-y-3">
               {sets.map((st) => {
@@ -533,6 +588,14 @@ export default function MeClient() {
                         >
                           {genreLabel(st.genre)}
                         </span>
+                        {st.direct && (
+                          <span
+                            className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+                            style={{ background: "var(--accent)" }}
+                          >
+                            運営用招待
+                          </span>
+                        )}
                         {formatDateTimeJST(st.created_at)} 作成
                       </span>
                       <span className="font-bold">
@@ -540,28 +603,39 @@ export default function MeClient() {
                       </span>
                     </p>
                     <div className="mt-2 space-y-2">
-                      <div>
-                        <p className="text-[11px] font-bold">
-                          リンクA ・ {urlStatus(st, st.joined_by_a)}
-                        </p>
-                        <p className="break-all text-xs">{`${origin}/i/${st.code_a}`}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold">
-                          リンクB ・ {urlStatus(st, st.joined_by_b)}
-                        </p>
-                        <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
-                      </div>
+                      {st.direct ? (
+                        <div>
+                          <p className="text-[11px] font-bold">
+                            招待リンク ・ {urlStatus(st, st.joined_by_b)}
+                          </p>
+                          <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="text-[11px] font-bold">
+                              リンクA ・ {urlStatus(st, st.joined_by_a)}
+                            </p>
+                            <p className="break-all text-xs">{`${origin}/i/${st.code_a}`}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold">
+                              リンクB ・ {urlStatus(st, st.joined_by_b)}
+                            </p>
+                            <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
+                          </div>
+                        </>
+                      )}
                     </div>
                     {!both && !st.voided_at && (
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => voidSet(st.id)}
+                        onClick={() => voidSet(st)}
                         className="mt-2 text-xs underline underline-offset-2 disabled:opacity-50"
                         style={{ color: "var(--muted)" }}
                       >
-                        このセットを取り消す
+                        {st.direct ? "この招待を取り消す" : "このセットを取り消す"}
                       </button>
                     )}
                   </li>
