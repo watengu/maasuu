@@ -8,7 +8,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { getSession, setPendingPath, signInWithGoogle, type Session } from "../../auth-client";
+import {
+  getSession,
+  setPendingPath,
+  signInAsGuest,
+  signInWithGoogle,
+  type Session,
+} from "../../auth-client";
 import BannedScreen from "../../banned-screen";
 import { genreLabel } from "../../../lib/genres";
 import { rpc, selectOne } from "../../../lib/supabase";
@@ -16,7 +22,7 @@ import type { ClaimResult, Genre, IntroPreview, Profile } from "../../../lib/typ
 
 type Phase =
   | { kind: "loading" }
-  | { kind: "needLogin" }
+  | { kind: "needLogin"; preview: IntroPreview | null }
   | { kind: "needProfile" }
   | { kind: "banned" }
   | { kind: "error"; message: string }
@@ -43,6 +49,8 @@ const CLAIM_ERRORS: Record<string, string> = {
     "その相手との繋がりはすでに終わっています。同じ相手とは再接続できません。",
   banned: "このアカウントは停止されています。",
   not_authenticated: "ログインが必要です。",
+  voided: "この紹介は取り消されました。",
+  expired: "この紹介は有効期限（発行から72時間）を過ぎました。",
 };
 
 export default function IntroClient() {
@@ -80,7 +88,29 @@ export default function IntroClient() {
   const load = useCallback(async () => {
     const session = await getSession();
     if (!session) {
-      setPhase({ kind: "needLogin" });
+      // 未ログインでもプレビューだけは見られる（コード自体が資格情報）。
+      // 運営発行のセットなら、この画面に「ログインなし窓口」が出る。
+      const pv = await rpc<IntroPreview>("intro_preview", { p_code: code }).catch(
+        () => null,
+      );
+      if (pv) {
+        if (!pv.found) {
+          setPhase({ kind: "error", message: "この紹介リンクは見つかりませんでした。" });
+          return;
+        }
+        if (pv.availability === "voided") {
+          setPhase({ kind: "error", message: "この紹介は取り消されました。" });
+          return;
+        }
+        if (pv.availability === "expired") {
+          setPhase({
+            kind: "error",
+            message: "この紹介は有効期限（発行から72時間）を過ぎました。",
+          });
+          return;
+        }
+      }
+      setPhase({ kind: "needLogin", preview: pv });
       return;
     }
     const me = await selectOne<Profile>(`profiles?id=eq.${session.userId}&select=*`);
@@ -95,6 +125,17 @@ export default function IntroClient() {
     const preview = await rpc<IntroPreview>("intro_preview", { p_code: code });
     if (!preview.found) {
       setPhase({ kind: "error", message: "この紹介リンクは見つかりませんでした。" });
+      return;
+    }
+    if (preview.availability === "voided") {
+      setPhase({ kind: "error", message: "この紹介は取り消されました。" });
+      return;
+    }
+    if (preview.availability === "expired") {
+      setPhase({
+        kind: "error",
+        message: "この紹介は有効期限（発行から72時間）を過ぎました。",
+      });
       return;
     }
     setPhase({ kind: "ready", session, me, preview });
@@ -115,9 +156,16 @@ export default function IntroClient() {
     const t = setInterval(() => {
       claim()
         .then((res) => {
-          if (phaseRef.current.kind === "waiting") {
-            applyClaim(res, phaseRef.current.introducerName);
+          if (phaseRef.current.kind !== "waiting") return;
+          if (res.status === "error") {
+            // 待機中に取り消し・失効したら、その旨を表示して止まる
+            setPhase({
+              kind: "error",
+              message: CLAIM_ERRORS[res.reason] ?? "この紹介は無効になりました。",
+            });
+            return;
           }
+          applyClaim(res, phaseRef.current.introducerName);
         })
         .catch(() => undefined);
     }, 5_000);
@@ -139,6 +187,25 @@ export default function IntroClient() {
     }
   };
 
+  // ログインなし窓口: 匿名サインインして、そのまま通常フロー（プロフィール作成→参加）へ合流する
+  const guestEnter = async () => {
+    setBusy(true);
+    setErrorMsg("");
+    try {
+      const ok = await signInAsGuest();
+      if (!ok) {
+        setErrorMsg("入れませんでした。時間をおいてもう一度お試しください。");
+        return;
+      }
+      await load();
+    } catch (e) {
+      console.error(e);
+      setErrorMsg("入れませんでした。時間をおいてもう一度お試しください。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (phase.kind === "loading") {
     return (
       <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
@@ -151,16 +218,51 @@ export default function IntroClient() {
   if (phase.kind === "banned") return <BannedScreen />;
 
   if (phase.kind === "needLogin") {
+    const pv = phase.preview;
+    const introducer = pv?.introducer;
+    const guestOk = Boolean(pv?.guest_ok);
     return (
       <main className="mx-auto w-full max-w-md px-4 py-16 text-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/stamps/stamp-07.png" alt="まぁ＆すぅ" className="mx-auto w-32" />
+        {introducer?.icon_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={introducer.icon_url}
+            alt=""
+            className="mx-auto h-20 w-20 rounded-full object-cover"
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/stamps/stamp-07.png" alt="まぁ＆すぅ" className="mx-auto w-32" />
+        )}
         <h1 className="mt-2 text-2xl font-bold" style={{ color: "var(--accent-strong)" }}>
           マァスゥへの紹介
         </h1>
         <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
-          紹介が届いています。参加するにはログインが必要です。
+          {introducer?.display_name
+            ? `${introducer.display_name} さんからの紹介が届いています。`
+            : "紹介が届いています。"}
+          {guestOk ? "" : "参加するにはログインが必要です。"}
         </p>
+        {introducer?.status_line && (
+          <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+            {introducer.status_line}
+          </p>
+        )}
+        {pv?.genre && (
+          <p className="mt-3">
+            <span
+              className="rounded-full px-3 py-1 text-xs font-bold"
+              style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
+            >
+              テーマ：{genreLabel(pv.genre)}
+            </span>
+          </p>
+        )}
+        {pv?.slot_taken && (
+          <p className="mt-3 text-xs" style={{ color: "var(--accent-strong)" }}>
+            ※ このリンクは使用済みです。
+          </p>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -172,6 +274,32 @@ export default function IntroClient() {
         >
           Googleでログインして参加する
         </button>
+        {guestOk && (
+          <>
+            <p className="mt-5 text-xs" style={{ color: "var(--muted)" }}>
+              または
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={guestEnter}
+              className="mt-2 w-full rounded-full border py-3 text-sm font-bold disabled:opacity-50"
+              style={{ borderColor: "var(--accent)", color: "var(--accent-strong)" }}
+            >
+              {busy ? "入っています…" : "ログインなしではいる"}
+            </button>
+            <p className="mt-3 text-left text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+              ・この入口は運営からの招待専用です。名前と性別だけ決めれば参加できます。
+              <br />
+              ・参加情報はこの端末のブラウザに保存されます。別の端末やブラウザでは開けません。
+            </p>
+          </>
+        )}
+        {errorMsg && (
+          <p className="mt-3 text-xs" style={{ color: "var(--accent-strong)" }}>
+            {errorMsg}
+          </p>
+        )}
       </main>
     );
   }
