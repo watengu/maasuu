@@ -4,6 +4,8 @@
 // このリンクはセットの片方。参加（claim）してもすぐには繋がらず、
 // もう片方のリンクが別の人に開かれた瞬間に、その2人の繋がりが連動スタートする。
 // 紹介者はブリッジ役で、繋がりの当事者にはならない。
+// 例外: ダイレクト招待（direct = true、運営専用）では紹介者本人が当事者Aとして
+// 着席済みで、このリンク（code_b）を開いた人が参加した瞬間に繋がりが始まる。
 // スロットの確保と接続の作成は claim_intro_slot RPC が原子的に行う。
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -221,6 +223,7 @@ export default function IntroClient() {
     const pv = phase.preview;
     const introducer = pv?.introducer;
     const guestOk = Boolean(pv?.guest_ok);
+    const direct = Boolean(pv?.direct);
     return (
       <main className="mx-auto w-full max-w-md px-4 py-16 text-center">
         {introducer?.icon_url ? (
@@ -235,12 +238,18 @@ export default function IntroClient() {
           <img src="/stamps/stamp-07.png" alt="まぁ＆すぅ" className="mx-auto w-32" />
         )}
         <h1 className="mt-2 text-2xl font-bold" style={{ color: "var(--accent-strong)" }}>
-          マァスゥへの紹介
+          {direct && introducer?.display_name
+            ? `${introducer.display_name} さんからの招待`
+            : "マァスゥへの紹介"}
         </h1>
         <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
-          {introducer?.display_name
-            ? `${introducer.display_name} さんからの紹介が届いています。`
-            : "紹介が届いています。"}
+          {direct
+            ? introducer?.display_name
+              ? `${introducer.display_name} さんがあなたを招待しています。参加すると、${introducer.display_name} さんとの繋がりが始まります。`
+              : "招待が届いています。参加すると、招待した人との繋がりが始まります。"
+            : introducer?.display_name
+              ? `${introducer.display_name} さんからの紹介が届いています。`
+              : "紹介が届いています。"}
           {guestOk ? "" : "参加するにはログインが必要です。"}
         </p>
         {introducer?.status_line && (
@@ -389,6 +398,7 @@ export default function IntroClient() {
   const { preview } = phase;
   const introducer = preview.introducer;
   const genre = preview.genre;
+  const direct = Boolean(preview.direct);
 
   return (
     <main className="mx-auto w-full max-w-md px-4 py-12">
@@ -408,7 +418,13 @@ export default function IntroClient() {
           <img src="/stamps/stamp-08.png" alt="まぁ＆すぅ" className="mx-auto w-24" />
         )}
         <h1 className="mt-3 text-lg font-bold">
-          {introducer?.display_name ? `${introducer.display_name} さんからの紹介` : "紹介が届いています"}
+          {direct
+            ? introducer?.display_name
+              ? `${introducer.display_name} さんからの招待`
+              : "招待が届いています"
+            : introducer?.display_name
+              ? `${introducer.display_name} さんからの紹介`
+              : "紹介が届いています"}
         </h1>
         {introducer?.status_line && (
           <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
@@ -429,11 +445,22 @@ export default function IntroClient() {
           className="mt-4 space-y-1 text-left text-xs leading-relaxed"
           style={{ color: "var(--muted)" }}
         >
-          <p>・この紹介は「リンク2本で1セット」です。あなたが参加し、もう1人がもう片方のリンクで参加すると、その2人の繋がりが始まります。</p>
-          <p>・紹介した人は橋渡し役で、繋がりには入りません。</p>
-          <p>・繋がりは2人同時にスタートします。初日はスタンプだけ。テキストは双方の許可がそろうと、翌日から使えます。</p>
-          <p>・期限は3日または7日（組み合わせで決まります）。期限までに往復のやりとりが足りないと、繋がりは消えます。</p>
-          <p>・メッセージは24時間で見えなくなります。</p>
+          {direct ? (
+            <>
+              <p>・これは{introducer?.display_name ? ` ${introducer.display_name} さん` : "招待した人"}本人からの招待です。あなたが参加すると、その場で2人の繋がりが始まります。</p>
+              <p>・繋がりは2人同時にスタートします。初日はスタンプだけ。テキストは双方の許可がそろうと、翌日から使えます。</p>
+              <p>・期限は3日または7日（組み合わせで決まります）。期限までに往復のやりとりが足りないと、繋がりは消えます。</p>
+              <p>・メッセージは24時間で見えなくなります。</p>
+            </>
+          ) : (
+            <>
+              <p>・この紹介は「リンク2本で1セット」です。あなたが参加し、もう1人がもう片方のリンクで参加すると、その2人の繋がりが始まります。</p>
+              <p>・紹介した人は橋渡し役で、繋がりには入りません。</p>
+              <p>・繋がりは2人同時にスタートします。初日はスタンプだけ。テキストは双方の許可がそろうと、翌日から使えます。</p>
+              <p>・期限は3日または7日（組み合わせで決まります）。期限までに往復のやりとりが足りないと、繋がりは消えます。</p>
+              <p>・メッセージは24時間で見えなくなります。</p>
+            </>
+          )}
         </div>
         {preview.slot_taken && (
           <p className="mt-3 text-xs" style={{ color: "var(--accent-strong)" }}>
@@ -452,7 +479,7 @@ export default function IntroClient() {
           className="mt-5 w-full rounded-full py-3 text-sm font-bold text-white disabled:opacity-50"
           style={{ background: "var(--accent)" }}
         >
-          {busy ? "受け付けています…" : "この紹介で参加する"}
+          {busy ? "受け付けています…" : direct ? "この招待で参加する" : "この紹介で参加する"}
         </button>
         <Link
           href="/"
