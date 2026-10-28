@@ -23,7 +23,7 @@ export default function AppHeader() {
             つながり
           </Link>
           <Link href="/me" className="underline-offset-2 hover:underline">
-            プロフィール
+            設定
           </Link>
           <button
             type="button"
