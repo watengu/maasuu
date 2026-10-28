@@ -233,7 +233,7 @@ export default function TalkClient() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="talk-slide-in flex min-h-screen flex-col">
       <header
         className="sticky top-0 z-10 border-b"
         style={{ background: "var(--bg)", borderColor: "var(--line)" }}
