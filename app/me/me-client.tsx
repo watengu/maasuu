@@ -1,10 +1,12 @@
 "use client";
 
-// プロフィール編集: 基本情報 / カードの追加・削除 / 宣伝ページ ON・OFF と URL /
+// 設定画面: プロフィール編集（基本情報 / カードの追加・削除）/ 宣伝ページ ON・OFF と URL /
 // 招待の作成（一般ユーザーは直接招待のみ = リンク1本で本人と相手が直接繋がる。
 // 橋渡しセット = リンク2本で2人を繋ぐ形は運営のみ。ジャンル必須。
 // クールダウン = 一般ユーザーは前回作成から3日、運営は無制限。Ao 決定 2026-10-28）。
+// 自分のページの見た目はトップ（ホームパネル）と公開ページ側が担い、ここは設定に専念する。
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { getSession, type Session } from "../auth-client";
 import AppHeader from "../app-header";
 import BannedScreen from "../banned-screen";
@@ -22,106 +24,8 @@ import {
   selectRows,
   updateRows,
 } from "../../lib/supabase";
-import qrcodegen from "../../lib/qrcodegen";
+import LinkActions from "../link-actions";
 import type { Gender, Genre, IntroSet, Profile, ProfileCard } from "../../lib/types";
-
-// URL から QR コードの SVG をこの端末内で生成する（外部サービスは使わない）。
-function QrSvg({ url }: { url: string }) {
-  let size = 0;
-  let d = "";
-  try {
-    const qr = qrcodegen.QrCode.encodeText(url, qrcodegen.QrCode.Ecc.MEDIUM);
-    size = qr.size;
-    for (let y = 0; y < qr.size; y++) {
-      for (let x = 0; x < qr.size; x++) {
-        if (qr.getModule(x, y)) d += `M${x} ${y}h1v1H${x}z`;
-      }
-    }
-  } catch {
-    return null;
-  }
-  return (
-    <svg
-      width={180}
-      height={180}
-      viewBox={`-4 -4 ${size + 8} ${size + 8}`}
-      className="mt-2 rounded-lg"
-      style={{ background: "#fff" }}
-      role="img"
-      aria-label="QRコード"
-    >
-      <path d={d} fill="#000" />
-    </svg>
-  );
-}
-
-// リンクのコピー／共有ボタン（Ao 指示 2026-10-28: コピペ機能と、送り先を選べる共有の両方）。
-function LinkActions({ url }: { url: string }) {
-  const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
-  const [showQr, setShowQr] = useState(false);
-  const copy = async () => {
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(url);
-      ok = true;
-    } catch {
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = url;
-        document.body.appendChild(ta);
-        ta.select();
-        ok = document.execCommand("copy");
-        document.body.removeChild(ta);
-      } catch {
-        ok = false;
-      }
-    }
-    setCopyState(ok ? "ok" : "fail");
-    window.setTimeout(() => setCopyState("idle"), 2000);
-  };
-  const share = async () => {
-    if (typeof navigator !== "undefined" && "share" in navigator) {
-      try {
-        await navigator.share({ url });
-      } catch {
-        // 共有をキャンセルした場合は何もしない
-      }
-    } else {
-      await copy();
-    }
-  };
-  const btnCls = "rounded-full border px-3 py-1 text-[11px] font-bold";
-  const btnStyle = {
-    borderColor: "var(--line)",
-    background: "var(--surface)",
-    color: "var(--accent-strong)",
-  } as const;
-  return (
-    <>
-      <span className="mt-1 flex gap-2">
-        <button type="button" onClick={copy} className={btnCls} style={btnStyle}>
-          {copyState === "ok"
-            ? "コピー済み"
-            : copyState === "fail"
-              ? "コピーできませんでした"
-              : "コピー"}
-        </button>
-        <button type="button" onClick={share} className={btnCls} style={btnStyle}>
-          送る
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowQr((v) => !v)}
-          className={btnCls}
-          style={btnStyle}
-        >
-          QR
-        </button>
-      </span>
-      {showQr && <QrSvg url={url} />}
-    </>
-  );
-}
 
 export default function MeClient() {
   const [session, setSession] = useState<Session | null>(null);
@@ -431,6 +335,12 @@ export default function MeClient() {
     <div className="flex min-h-screen flex-col">
       <AppHeader />
       <main className="mx-auto w-full max-w-md flex-1 space-y-4 px-4 py-5">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="text-sm" style={{ color: "var(--muted)" }}>
+            ←
+          </Link>
+          <h1 className="text-base font-bold">設定</h1>
+        </div>
         {notice && (
           <p
             className="rounded-xl border px-3 py-2 text-center text-xs"
