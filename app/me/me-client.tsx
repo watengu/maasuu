@@ -15,6 +15,7 @@ import { GENRE_OPTIONS, genreLabel } from "../../lib/genres";
 import {
   deleteRows,
   insertRow,
+  rpc,
   selectOne,
   selectRows,
   updateRows,
@@ -117,9 +118,11 @@ export default function MeClient() {
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const promoUrl = me.promo_code ? `${origin}/p/${me.promo_code}` : "";
-  const lastSetAt = sets.length > 0 ? sets[0].created_at : null;
+  // 取り消したセットはクールダウン計算から除外する（再発行が阻まれないため）。
+  // ゲストは紹介セットを作れない（SQL ポリシーでも遮断している）。
+  const lastSetAt = sets.find((x) => !x.voided_at)?.created_at ?? null;
   const cooldownMs = introCooldownRemainingMs(lastSetAt);
-  const canCreateSet = cooldownMs <= 0;
+  const canCreateSet = cooldownMs <= 0 && !me.is_guest;
 
   const saveProfile = async () => {
     setBusy(true);
@@ -222,8 +225,54 @@ export default function MeClient() {
     }
   };
 
-  const slotStatus = (joinedBy: string | null) =>
-    joinedBy ? `参加済み（${joinedNames.get(joinedBy) ?? "参加者"} さん）` : "未参加";
+  const voidSet = async (setId: string) => {
+    if (!window.confirm("この紹介セットを取り消しますか？リンクは両方とも無効になります。")) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const res = await rpc<{ ok: boolean; reason?: string }>("void_intro_set", {
+        p_set_id: setId,
+      });
+      if (!res.ok) {
+        setNotice(
+          res.reason === "already_connected"
+            ? "すでに繋がりが成立しているため取り消せません。"
+            : "取り消せませんでした。",
+        );
+      } else {
+        setNotice("紹介セットを取り消しました。");
+        await load();
+      }
+    } catch (e) {
+      console.error(e);
+      setNotice("取り消せませんでした。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 運用の単位は「1URL = 1人分」。URLごとに状態が見える形にする。
+  const SET_EXPIRE_MS = 72 * 60 * 60 * 1000;
+  const setVoidReason = (st: IntroSet): string | null => {
+    if (st.voided_at) return "取り消し";
+    if (
+      me.is_operator &&
+      !st.joined_by_a &&
+      !st.joined_by_b &&
+      Date.now() - new Date(st.created_at).getTime() > SET_EXPIRE_MS
+    ) {
+      return "期限切れ";
+    }
+    return null;
+  };
+  const urlStatus = (st: IntroSet, joinedBy: string | null): string => {
+    const vr = setVoidReason(st);
+    if (vr) return `失効（${vr}）`;
+    if (!joinedBy) return "未使用";
+    return st.joined_by_a && st.joined_by_b
+      ? `接続済み（${joinedNames.get(joinedBy) ?? "参加者"} さん）`
+      : `待機中（${joinedNames.get(joinedBy) ?? "参加者"} さん参加済み）`;
+  };
 
   const inputCls = "w-full rounded-xl border px-3 py-2 text-sm outline-none";
   const inputStyle = { borderColor: "var(--line)", background: "var(--surface)" } as const;
@@ -388,6 +437,18 @@ export default function MeClient() {
           </div>
         </section>
 
+        {me.is_guest && (
+          <section className={sectionCls} style={sectionStyle}>
+            <h2 className="text-sm font-bold">ゲストで参加中です</h2>
+            <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+              あなたは「ログインなし」で参加しています。情報はこの端末のブラウザに
+              保存されているため、別の端末やブラウザでは開けません。
+              ゲストの間は、紹介セットの作成と宣伝ページは使えません。
+            </p>
+          </section>
+        )}
+
+        {!me.is_guest && (
         <section className={sectionCls} style={sectionStyle}>
           <h2 className="text-sm font-bold">宣伝ページ</h2>
           <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
@@ -411,7 +472,9 @@ export default function MeClient() {
             </p>
           )}
         </section>
+        )}
 
+        {!me.is_guest && (
         <section className={sectionCls} style={sectionStyle}>
           <h2 className="text-sm font-bold">紹介セット（リンク2本で1セット）</h2>
           <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
@@ -472,28 +535,42 @@ export default function MeClient() {
                         </span>
                         {formatDateTimeJST(st.created_at)} 作成
                       </span>
-                      <span className="font-bold">{both ? "繋がり成立" : "成立待ち"}</span>
+                      <span className="font-bold">
+                        {both ? "繋がり成立" : setVoidReason(st) ? "失効" : "成立待ち"}
+                      </span>
                     </p>
                     <div className="mt-2 space-y-2">
                       <div>
                         <p className="text-[11px] font-bold">
-                          リンクA ・ {slotStatus(st.joined_by_a)}
+                          リンクA ・ {urlStatus(st, st.joined_by_a)}
                         </p>
                         <p className="break-all text-xs">{`${origin}/i/${st.code_a}`}</p>
                       </div>
                       <div>
                         <p className="text-[11px] font-bold">
-                          リンクB ・ {slotStatus(st.joined_by_b)}
+                          リンクB ・ {urlStatus(st, st.joined_by_b)}
                         </p>
                         <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
                       </div>
                     </div>
+                    {!both && !st.voided_at && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => voidSet(st.id)}
+                        className="mt-2 text-xs underline underline-offset-2 disabled:opacity-50"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        このセットを取り消す
+                      </button>
+                    )}
                   </li>
                 );
               })}
             </ul>
           )}
         </section>
+        )}
       </main>
     </div>
   );
