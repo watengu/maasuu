@@ -192,11 +192,13 @@ export default function HomeClient() {
           >
             <p>まだ繋がりがありません。</p>
             <p className="mt-2">
-              マァスゥの繋がりは、紹介から生まれます。誰かと誰かを繋ぐときは
+              マァスゥの繋がりは、紹介から生まれます。誰かを招待するときは
               <Link href="/me" className="font-bold underline underline-offset-2">
                 プロフィール
               </Link>
-              から紹介セット（リンク2本）を作って、2人に1本ずつ渡してください{phase.me.is_operator ? "。" : "（作成は3日に1回まで）。"}
+              {phase.me.is_operator
+                ? "から招待リンクや紹介セットを作って渡してください。"
+                : "から招待リンクを作って、相手に渡してください（作成は3日に1回まで）。"}
             </p>
           </div>
         ) : (
