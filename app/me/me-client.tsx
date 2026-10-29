@@ -34,6 +34,7 @@ export default function MeClient() {
   const [sets, setSets] = useState<IntroSet[]>([]);
   const [joinedNames, setJoinedNames] = useState<Map<string, string>>(new Map());
   const [newGenre, setNewGenre] = useState<Genre>("chat");
+  const [newNote, setNewNote] = useState("");
   const [phase, setPhase] = useState<"loading" | "error" | "banned" | "ready">("loading");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -224,7 +225,9 @@ export default function MeClient() {
         code_a: codeA,
         code_b: codeB,
         genre: newGenre,
+        note: newNote.trim() ? newNote.trim() : null,
       });
+      setNewNote("");
       setNotice("紹介セットを作りました。リンクを2人に1本ずつ渡してください。");
       await load();
     } catch (e) {
@@ -254,7 +257,9 @@ export default function MeClient() {
         genre: newGenre,
         direct: true,
         joined_by_a: session.userId,
+        note: newNote.trim() ? newNote.trim() : null,
       });
+      setNewNote("");
       setNotice(
         me.is_operator
           ? "運営用招待を作りました。「招待リンク」を友人に渡してください。参加した瞬間に、あなたとの繋がりが始まります。"
@@ -554,6 +559,18 @@ export default function MeClient() {
               招待は3日に1つまで作れます。
             </p>
           )}
+          <p className="mt-3 text-[11px] font-bold">繋がったあとの流れ</p>
+          <ul
+            className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] leading-relaxed"
+            style={{ color: "var(--muted)" }}
+          >
+            <li>初日（24時間）はスタンプだけのやり取りです。</li>
+            <li>テキストは、2人とも「テキストを許可」して、24時間が過ぎると使えます。</li>
+            <li>メッセージは24時間で見えなくなります。</li>
+            <li>
+              繋がりには期限があります。期限までに往復ターンを達成すると期限が延びます（異性間は3日で往復3ターン・達成で+3日、同性間は7日で往復2ターン・達成で+7日）。残り時間と往復の進み具合は、トーク画面の上部に表示されます。
+            </li>
+          </ul>
           <p className="mt-3 text-xs font-bold">テーマのジャンル（必須）</p>
           <div className="mt-2 grid grid-cols-3 gap-2">
             {GENRE_OPTIONS.map((g) => (
@@ -577,6 +594,15 @@ export default function MeClient() {
               </button>
             ))}
           </div>
+          <p className="mt-3 text-xs font-bold">送り先メモ（任意）</p>
+          <input
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value.slice(0, 60))}
+            maxLength={60}
+            placeholder="例：○○さん用"
+            className="mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none"
+            style={{ borderColor: "var(--line)", background: "var(--surface)" }}
+          />
           {me.is_operator && (
             <button
               type="button"
@@ -653,6 +679,9 @@ export default function MeClient() {
                         {both ? "繋がり成立" : setVoidReason(st) ? "失効" : "成立待ち"}
                       </span>
                     </p>
+                    {st.note && (
+                      <p className="mt-1.5 text-xs font-bold">送り先メモ：{st.note}</p>
+                    )}
                     <div className="mt-2 space-y-2">
                       {st.direct ? (
                         <div>
