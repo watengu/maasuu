@@ -46,8 +46,17 @@ export default function ProfileCreateForm({
       });
       onCreated(profile);
     } catch (e) {
-      setError("作成できませんでした。時間をおいてもう一度お試しください。");
       console.error(e);
+      // 登録ゲート（2026-10-29）: 資格なしの INSERT は RLS で 42501 になる。
+      // その場合は「紹介リンクから来た人だけが登録できる」旨を案内する。
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/42501|permission|row-level security/i.test(msg)) {
+        setError(
+          "登録できませんでした。マァスゥは紹介制のため、紹介リンクから来た人だけが登録できます。",
+        );
+      } else {
+        setError("作成できませんでした。時間をおいてもう一度お試しください。");
+      }
       setBusy(false);
     }
   };
