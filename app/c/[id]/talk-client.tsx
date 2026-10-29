@@ -85,9 +85,27 @@ export default function TalkClient() {
     const allTurns = await selectRows<Turn>(
       `turns?connection_id=eq.${connId}&order=created_at.asc&select=*`,
     );
+    // 既読: この画面を開いて相手のターンを取得した時点で、相手の未読分に read_at を立てる。
+    // 列追加マイグレーション未適用の環境では更新が失敗するので、その場合は無視して続行する。
+    let turnsForState = allTurns;
+    if (allTurns.some((t) => t.sender_id === partnerId && !t.read_at)) {
+      const readAt = new Date().toISOString();
+      try {
+        await updateRows(
+          "turns",
+          `connection_id=eq.${connId}&sender_id=eq.${partnerId}&read_at=is.null`,
+          { read_at: readAt },
+        );
+        turnsForState = allTurns.map((t) =>
+          t.sender_id === partnerId && !t.read_at ? { ...t, read_at: readAt } : t,
+        );
+      } catch {
+        // 既読の記録に失敗しても表示は止めない
+      }
+    }
     let judged = conn;
     if (conn.state === "active") {
-      const res = judgeConnection(conn, allTurns, rules);
+      const res = judgeConnection(conn, turnsForState, rules);
       if (res.changed) {
         judged = res.connection;
         await updateRows("connections", `id=eq.${connId}`, {
@@ -96,7 +114,7 @@ export default function TalkClient() {
         }).catch(() => undefined);
       }
     }
-    setData({ session, me, partner, introducer, conn: judged, rules, turns: allTurns });
+    setData({ session, me, partner, introducer, conn: judged, rules, turns: turnsForState });
     setPhase("ready");
   }, [connId]);
 
@@ -363,6 +381,7 @@ export default function TalkClient() {
                     className="mt-0.5 block text-[10px]"
                     style={{ color: "var(--muted)" }}
                   >
+                    {mine && t.read_at && <span className="mr-1">既読</span>}
                     {formatTimeJST(t.created_at)}
                   </span>
                 </div>
@@ -410,14 +429,14 @@ export default function TalkClient() {
                 </button>
               </div>
             ) : null}
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {STAMPS.map((s) => (
                 <button
                   key={s.id}
                   type="button"
                   disabled={busy || remainToday <= 0}
                   onClick={() => send("stamp", s.id)}
-                  className="rounded-xl p-1 disabled:opacity-40"
+                  className="rounded-xl p-1.5 disabled:opacity-40"
                   style={{ background: "var(--surface)", border: "1px solid var(--line)" }}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
