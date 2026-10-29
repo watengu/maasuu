@@ -20,7 +20,13 @@ import {
 import BannedScreen from "../../banned-screen";
 import { genreLabel } from "../../../lib/genres";
 import { rpc, selectOne } from "../../../lib/supabase";
-import type { ClaimResult, Genre, IntroPreview, Profile } from "../../../lib/types";
+import type {
+  ClaimResult,
+  Genre,
+  GrantEntitlementResult,
+  IntroPreview,
+  Profile,
+} from "../../../lib/types";
 
 type Phase =
   | { kind: "loading" }
@@ -53,6 +59,15 @@ const CLAIM_ERRORS: Record<string, string> = {
   not_authenticated: "ログインが必要です。",
   voided: "この紹介は取り消されました。",
   expired: "この紹介は有効期限（発行から72時間）を過ぎました。",
+  guest_not_allowed: "この紹介は、Googleログインでの参加のみです。",
+};
+
+// 登録ゲート（grant_invite_entitlement）の理由別文言。それ以外は汎用文言にする。
+const GRANT_ERRORS: Record<string, string> = {
+  not_found: "この紹介リンクは見つかりませんでした。",
+  voided: "この紹介は取り消されました。",
+  expired: "この紹介は有効期限（発行から72時間）を過ぎました。",
+  slot_taken: "このリンクはすでに他の人が使っています。",
 };
 
 export default function IntroClient() {
@@ -117,6 +132,27 @@ export default function IntroClient() {
     }
     const me = await selectOne<Profile>(`profiles?id=eq.${session.userId}&select=*`);
     if (!me) {
+      // 登録ゲート（2026-10-29）: プロフィール作成へ進む前に、この紹介リンクで
+      // 登録資格（entitlement）を付与する。資格が付いた人だけが profiles を
+      // INSERT できる（SQL 後行が前提）。RPC 自体が例外（関数未作成など）の
+      // 移行期は、安全策として従来どおり needProfile に進める。
+      try {
+        const g = await rpc<GrantEntitlementResult>("grant_invite_entitlement", {
+          p_code: code,
+        });
+        if (g.status === "error") {
+          setPhase({
+            kind: "error",
+            message:
+              GRANT_ERRORS[g.reason] ??
+              "参加の準備ができませんでした。時間をおいてもう一度お試しください。",
+          });
+          return;
+        }
+      } catch {
+        // 移行期フォールバック: grant RPC が無い等で呼び出し自体が失敗したら
+        // 従来フロー（needProfile）に進める。
+      }
       setPhase({ kind: "needProfile" });
       return;
     }
