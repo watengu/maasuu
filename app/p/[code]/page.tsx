@@ -39,15 +39,20 @@ export default async function PromoPage({
   );
 
   return (
-    <main className="mx-auto w-full max-w-md px-4 py-10">
-      <ProfilePageView profile={profile} cards={cards} />
-
-      <p className="mt-10 text-center text-xs" style={{ color: "var(--muted)" }}>
-        <Link href="/" className="underline underline-offset-2">
-          マァスゥ
-        </Link>
-        のプロフィールページです（紹介制のため、参加には招待が必要です）
-      </p>
+    <main className="flex min-h-dvh w-full flex-col">
+      <ProfilePageView
+        profile={profile}
+        cards={cards}
+        className="min-h-dvh flex-1"
+        footer={
+          <p className="text-center text-xs leading-relaxed opacity-85">
+            <Link href="/" className="underline underline-offset-2">
+              マァスゥ
+            </Link>
+            のプロフィールページです（紹介制のため、参加には招待が必要です）
+          </p>
+        }
+      />
     </main>
   );
 }

@@ -304,7 +304,9 @@ export default function ShellClient() {
           onClickCapture={handleClickCapture}
           onDragStart={(e) => e.preventDefault()}
         >
-          <div className="flex w-[200%] items-start" style={trackStyle}>
+          {/* items-stretch: ホームパネルの全面背景（ProfilePageView）を
+              パネル全高に広げるため（第4弾 2026-10-29） */}
+          <div className="flex w-[200%] items-stretch" style={trackStyle}>
             <div className="w-1/2 shrink-0" inert={panel !== 0}>
               {views ? (
                 <FriendsPanel

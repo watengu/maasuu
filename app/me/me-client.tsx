@@ -5,6 +5,8 @@
 // 橋渡し = リンク2本で2人を繋ぐ形は運営のみ。ジャンル必須。
 // クールダウン = 一般ユーザーは前回作成から3日、運営は無制限。Ao 決定 2026-10-28）。
 // 自分のページの見た目はトップ（ホームパネル）と公開ページ側が担い、ここは設定に専念する。
+// 基本情報セクションの先頭には ProfilePageView のライブプレビューを置き、
+// 入力・テーマ選択・カード並び替えがその場で仕上がりに反映される（第4弾 2026-10-29）。
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getSession, type Session } from "../auth-client";
@@ -25,7 +27,7 @@ import {
   updateRows,
 } from "../../lib/supabase";
 import LinkActions from "../link-actions";
-import { PROFILE_THEMES } from "../profile-page-view";
+import ProfilePageView, { PROFILE_THEMES } from "../profile-page-view";
 import PushSection from "./push-section";
 import type { Gender, Genre, IntroSet, Profile, ProfileCard } from "../../lib/types";
 
@@ -230,6 +232,34 @@ export default function MeClient() {
     }
   };
 
+  // カードの並び替え: ローカル state を入れ替えてプレビューへ即反映し、
+  // sort を通し番号に付け替えて保存する（既存の保存方式＝updateRows に合わせる）。
+  const moveCard = async (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= cards.length) return;
+    const origSort = new Map(cards.map((c) => [c.id, c.sort]));
+    const next = [...cards];
+    [next[index], next[target]] = [next[target], next[index]];
+    const reordered = next.map((c, i) => ({ ...c, sort: i }));
+    setCards(reordered);
+    setBusy(true);
+    setNotice("");
+    try {
+      await Promise.all(
+        reordered
+          .filter((c) => origSort.get(c.id) !== c.sort)
+          .map((c) => updateRows("profile_cards", `id=eq.${c.id}`, { sort: c.sort })),
+      );
+      await load();
+    } catch (e) {
+      console.error(e);
+      setNotice("並び替えを保存できませんでした。");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // 橋渡しセット（リンク2本）の作成は運営のみ（Ao 決定 2026-10-28: ユーザーは橋渡ししない）。
   const createSet = async () => {
     if (!canCreateSet || !me.is_operator) return;
@@ -350,6 +380,17 @@ export default function MeClient() {
       : `待機中（${joinedNames.get(joinedBy) ?? "参加者"} さん参加済み）`;
   };
 
+  // ライブプレビュー用: フォームの現在値で上書きしたプロフィール。
+  // 入力・テーマ選択のたびに再描画され、仕上がりがその場で確認できる。
+  const previewProfile: Profile = {
+    ...me,
+    display_name: name.trim() || me.display_name,
+    icon_url: iconUrl.trim() || null,
+    cover_url: coverUrl.trim() || null,
+    theme,
+    status_line: statusLine,
+  };
+
   const inputCls = "w-full rounded-xl border px-3 py-2 text-sm outline-none";
   const inputStyle = { borderColor: "var(--line)", background: "var(--surface)" } as const;
   const sectionCls = "rounded-2xl border p-5";
@@ -376,6 +417,22 @@ export default function MeClient() {
 
         <section className={sectionCls} style={sectionStyle}>
           <h2 className="text-sm font-bold">基本情報</h2>
+          <div
+            className="mt-3 overflow-hidden rounded-[24px] border"
+            style={{ borderColor: "var(--line)" }}
+          >
+            <div className="h-[430px]">
+              <ProfilePageView
+                profile={previewProfile}
+                cards={cards}
+                compact
+                className="h-full"
+              />
+            </div>
+          </div>
+          <p className="mt-1.5 text-[11px]" style={{ color: "var(--muted)" }}>
+            プレビュー： 名前・アイコン・背景などの入力がその場で反映されます。
+          </p>
           <div className="mt-3 space-y-3">
             <div>
               <label className="mb-1 block text-xs font-bold">名前</label>
@@ -393,7 +450,7 @@ export default function MeClient() {
                 onChange={(e) => setIconUrl(e.target.value)} placeholder="https://..." />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-bold">背景画像URL</label>
+              <label className="mb-1 block text-xs font-bold">背景画像URL（プリセットより優先）</label>
               <input className={inputCls} style={inputStyle} value={coverUrl}
                 onChange={(e) => setCoverUrl(e.target.value)} placeholder="https://..." />
               <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
@@ -401,7 +458,7 @@ export default function MeClient() {
               </p>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-bold">テーマ（背景の色）</label>
+              <label className="mb-1 block text-xs font-bold">テーマ（背景の情景）</label>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(PROFILE_THEMES).map(([key, t]) => (
                   <button
@@ -487,7 +544,7 @@ export default function MeClient() {
           </p>
           {cards.length > 0 && (
             <ul className="mt-3 space-y-2">
-              {cards.map((c) => (
+              {cards.map((c, idx) => (
                 <li
                   key={c.id}
                   className="flex items-center gap-2 rounded-xl border px-3 py-2"
@@ -502,6 +559,26 @@ export default function MeClient() {
                     </span>
                     {c.title}
                   </span>
+                  <button
+                    type="button"
+                    disabled={busy || idx === 0}
+                    onClick={() => moveCard(idx, -1)}
+                    aria-label="上へ"
+                    className="px-1 text-sm disabled:opacity-30"
+                    style={{ color: "var(--muted)" }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || idx === cards.length - 1}
+                    onClick={() => moveCard(idx, 1)}
+                    aria-label="下へ"
+                    className="px-1 text-sm disabled:opacity-30"
+                    style={{ color: "var(--muted)" }}
+                  >
+                    ↓
+                  </button>
                   <button
                     type="button"
                     disabled={busy}
