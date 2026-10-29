@@ -24,7 +24,15 @@ import {
 import { formatRemaining, formatTimeJST } from "../../../lib/format";
 import { genreLabel } from "../../../lib/genres";
 import { STAMPS, stampSrc } from "../../../lib/stamps";
-import { insertRow, rpc, selectOne, selectRows, updateRows } from "../../../lib/supabase";
+import {
+  SUPABASE_ANON_KEY,
+  SUPABASE_URL,
+  insertRow,
+  rpc,
+  selectOne,
+  selectRows,
+  updateRows,
+} from "../../../lib/supabase";
 import type { Connection, Profile, Turn } from "../../../lib/types";
 
 type Loaded = {
@@ -47,6 +55,8 @@ export default function TalkClient() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
+  // スタンプ選択欄は普段は閉じておき、ボタンで下から開く（会話を主役にする。Ao 指示 2026-10-29）
+  const [stampOpen, setStampOpen] = useState(false);
   const [, setTick] = useState(0);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -167,6 +177,8 @@ export default function TalkClient() {
   const { session, partner, introducer, conn, rules, turns } = data;
   const now = new Date();
   const gone = conn.state === "gone";
+  const ended = conn.state === "ended";
+  const finished = gone || ended;
   const visibleTurns = turns.filter((t) => new Date(t.expires_at).getTime() > now.getTime());
   const { roundTrips } = roundTripsInCurrentWindow(conn, turns, rules);
   const remainToday = remainingTurnsToday(turns, session.userId, rules, now);
@@ -175,6 +187,25 @@ export default function TalkClient() {
   const textOk = canSendText(conn, now);
   const myOk = conn.user_a === session.userId ? conn.text_ok_a : conn.text_ok_b;
   const partnerOk = conn.user_a === session.userId ? conn.text_ok_b : conn.text_ok_a;
+
+  // Web Push: 送信できたら相手へ通知を投げる（fire-and-forget。失敗しても送信フローは止めない）
+  const notifyPush = async () => {
+    try {
+      const s = await getSession();
+      if (!s) return;
+      await fetch(`${SUPABASE_URL}/functions/v1/push-notify`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: "Bearer " + s.accessToken,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ connection_id: connId }),
+      });
+    } catch {
+      // 通知の失敗は無視する（未設定の環境では 404 等になるだけ）
+    }
+  };
 
   const send = async (kind: "stamp" | "text", stampId?: string, body?: string) => {
     if (busy) return;
@@ -209,6 +240,7 @@ export default function TalkClient() {
         stamp_id: stampId ?? null,
         body: body ?? null,
       });
+      void notifyPush();
       setText("");
       await load();
     } catch (e) {
@@ -234,6 +266,24 @@ export default function TalkClient() {
     }
   };
 
+  // 繋がりを切る: 確認のうえ state='ended' にする。相手側でも終了表示になり、
+  // 双方とも送信できなくなる（送信判定は state==='active' のときだけ通る）。
+  const endConnection = async () => {
+    if (!window.confirm("この繋がりを切りますか？相手とも終了になり、元に戻せません。")) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      await updateRows("connections", `id=eq.${connId}`, { state: "ended" });
+      await load();
+      setNotice("この繋がりを終了しました。");
+    } catch (e) {
+      console.error(e);
+      setNotice("終了できませんでした。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const report = async (reason: "gender_spoof" | "other") => {
     if (!partner) return;
     if (!window.confirm("この相手を通報しますか？")) return;
@@ -251,7 +301,7 @@ export default function TalkClient() {
   };
 
   return (
-    <div className="talk-slide-in flex min-h-screen flex-col">
+    <div className="talk-slide-in flex min-h-dvh flex-col overflow-x-clip">
       <header
         className="sticky top-0 z-10 border-b"
         style={{ background: "var(--bg)", borderColor: "var(--line)" }}
@@ -274,19 +324,34 @@ export default function TalkClient() {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold">{partner?.display_name ?? "相手"}</p>
             <p className="truncate text-xs" style={{ color: "var(--muted)" }}>
-              {gone
-                ? "この繋がりは終わりました"
-                : `${formatRemaining(remainingMs(conn, now))} ・ 往復 ${roundTrips}/${rules.quotaRoundTrips} ・ 今日あと${remainToday}ターン`}
+              {ended
+                ? "この繋がりは終了しました"
+                : gone
+                  ? "この繋がりは終わりました"
+                  : `${formatRemaining(remainingMs(conn, now))} ・ 往復 ${roundTrips}/${rules.quotaRoundTrips} ・ 今日あと${remainToday}ターン`}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setReportOpen((v) => !v)}
-            className="text-xs underline underline-offset-2"
-            style={{ color: "var(--muted)" }}
-          >
-            通報
-          </button>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={() => setReportOpen((v) => !v)}
+              className="text-xs underline underline-offset-2"
+              style={{ color: "var(--muted)" }}
+            >
+              通報
+            </button>
+            {conn.state === "active" && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={endConnection}
+                className="text-xs font-bold underline underline-offset-2 disabled:opacity-50"
+                style={{ color: "var(--accent-strong)" }}
+              >
+                繋がりを切る
+              </button>
+            )}
+          </div>
         </div>
         {reportOpen && partner && (
           <div
@@ -391,15 +456,17 @@ export default function TalkClient() {
         </ul>
         {visibleTurns.length === 0 && (
           <p className="py-8 text-center text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            {gone
-              ? "メッセージは消えました。"
-              : "まだメッセージがありません。スタンプで最初のターンを送ってみましょう。\nメッセージは24時間で見えなくなります。"}
+            {ended
+              ? "この繋がりは終了しました。"
+              : gone
+                ? "メッセージは消えました。"
+                : "まだメッセージがありません。スタンプで最初のターンを送ってみましょう。\nメッセージは24時間で見えなくなります。"}
           </p>
         )}
         <div ref={bottomRef} />
       </main>
 
-      {!gone && (
+      {!finished && (
         <footer
           className="sticky bottom-0 border-t"
           style={{ background: "var(--bg)", borderColor: "var(--line)" }}
@@ -429,50 +496,75 @@ export default function TalkClient() {
                 </button>
               </div>
             ) : null}
-            <div className="grid grid-cols-3 gap-2">
-              {STAMPS.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  disabled={busy || remainToday <= 0}
-                  onClick={() => send("stamp", s.id)}
-                  className="rounded-xl p-1.5 disabled:opacity-40"
-                  style={{ background: "var(--surface)", border: "1px solid var(--line)" }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={s.src} alt={s.label} className="w-full" />
-                </button>
-              ))}
+            <div className="flex items-start gap-2">
+              <button
+                type="button"
+                onClick={() => setStampOpen((v) => !v)}
+                aria-expanded={stampOpen}
+                className="shrink-0 rounded-full border px-4 py-2 text-sm font-bold"
+                style={
+                  stampOpen
+                    ? {
+                        borderColor: "var(--accent)",
+                        background: "var(--accent-soft)",
+                        color: "var(--accent-strong)",
+                      }
+                    : {
+                        borderColor: "var(--line)",
+                        background: "var(--surface)",
+                        color: "var(--accent-strong)",
+                      }
+                }
+              >
+                スタンプ
+              </button>
+              {textOk ? (
+                <>
+                  <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value.slice(0, 140))}
+                    rows={2}
+                    maxLength={140}
+                    placeholder="140文字まで"
+                    className="min-w-0 flex-1 resize-none rounded-2xl border px-3 py-2 text-sm outline-none"
+                    style={{ borderColor: "var(--line)", background: "var(--surface)" }}
+                  />
+                  <button
+                    type="button"
+                    disabled={busy || !text.trim() || remainToday <= 0}
+                    onClick={() => send("text", undefined, text.trim())}
+                    className="shrink-0 rounded-full px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                    style={{ background: "var(--accent)" }}
+                  >
+                    送る
+                  </button>
+                </>
+              ) : (
+                <p className="flex-1 pt-2 text-center text-[11px]" style={{ color: "var(--muted)" }}>
+                  {unlocked && dayOne
+                    ? "テキストは明日から使えます"
+                    : unlocked
+                      ? ""
+                      : "テキストは双方の許可がそろうと使えます"}
+                </p>
+              )}
             </div>
-            {textOk ? (
-              <div className="mt-3 flex items-end gap-2">
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value.slice(0, 140))}
-                  rows={2}
-                  maxLength={140}
-                  placeholder="140文字まで"
-                  className="flex-1 resize-none rounded-2xl border px-3 py-2 text-sm outline-none"
-                  style={{ borderColor: "var(--line)", background: "var(--surface)" }}
-                />
-                <button
-                  type="button"
-                  disabled={busy || !text.trim() || remainToday <= 0}
-                  onClick={() => send("text", undefined, text.trim())}
-                  className="rounded-full px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
-                  style={{ background: "var(--accent)" }}
-                >
-                  送る
-                </button>
+            {stampOpen && (
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {STAMPS.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={busy || remainToday <= 0}
+                    onClick={() => send("stamp", s.id)}
+                    className="rounded-xl p-1.5 disabled:opacity-40"
+                    style={{ background: "var(--surface)", border: "1px solid var(--line)" }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={s.src} alt={s.label} className="w-full" />
+                  </button>
+                ))}
               </div>
-            ) : (
-              <p className="mt-2 text-center text-[11px]" style={{ color: "var(--muted)" }}>
-                {unlocked && dayOne
-                  ? "テキストは明日から使えます"
-                  : unlocked
-                    ? ""
-                    : "テキストは双方の許可がそろうと使えます"}
-              </p>
             )}
             <p className="mt-2 text-center text-[11px]" style={{ color: "var(--muted)" }}>
               今日あと{remainToday}ターン（上限 {rules.dailyCap}）・ メッセージは24時間で見えなくなります

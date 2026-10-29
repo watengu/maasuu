@@ -1,7 +1,7 @@
 "use client";
 
 // リンクのコピー／共有／QR ボタン（Ao 指示 2026-10-28: コピペ機能と、送り先を選べる共有の両方）。
-// 設定（/me）の宣伝URL・招待リンクと、友人一覧パネルの招待リンクで共有する。
+// 設定（/me）の公開ページURL・招待リンクと、友人一覧パネルの招待リンクで共有する。
 import { useState } from "react";
 import qrcodegen from "../lib/qrcodegen";
 

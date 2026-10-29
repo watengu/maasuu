@@ -34,6 +34,15 @@ export default function InviteSection({
   const [busy, setBusy] = useState(false);
   // 失効判定用の現在時刻（取得のたびに更新する。描画中に Date.now() を呼ばないため）
   const [nowMs, setNowMs] = useState(0);
+  // 繋がり成立済みの行は折りたたむ（詳細はボタンで開く。Ao 指示 2026-10-29）
+  const [expandedDone, setExpandedDone] = useState<Set<string>>(new Set());
+  const toggleDone = (id: string) =>
+    setExpandedDone((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const load = useCallback(async () => {
     const ss = await selectRows<IntroSet>(
@@ -265,6 +274,7 @@ export default function InviteSection({
         <ul className="mt-4 space-y-3">
           {directSets.map((st) => {
             const both = Boolean(st.joined_by_a && st.joined_by_b);
+            const collapsed = both && !expandedDone.has(st.id);
             return (
               <li
                 key={st.id}
@@ -294,6 +304,19 @@ export default function InviteSection({
                     {both ? "繋がり成立" : setVoidReason(st) ? "失効" : "成立待ち"}
                   </span>
                 </p>
+                {both && (
+                  <button
+                    type="button"
+                    onClick={() => toggleDone(st.id)}
+                    aria-expanded={!collapsed}
+                    className="mt-2 text-xs font-bold underline underline-offset-2"
+                    style={{ color: "var(--accent-strong)" }}
+                  >
+                    {collapsed ? "詳細をひらく" : "詳細をとじる"}
+                  </button>
+                )}
+                {!collapsed && (
+                  <>
                 {(() => {
                   const vr = setVoidReason(st);
                   const linked = connBySet.get(st.id);
@@ -337,11 +360,17 @@ export default function InviteSection({
                     type="button"
                     disabled={busy}
                     onClick={() => voidSet(st)}
-                    className="mt-2 text-xs underline underline-offset-2 disabled:opacity-50"
-                    style={{ color: "var(--muted)" }}
+                    className="mt-3 rounded-full border px-4 py-1.5 text-xs font-bold disabled:opacity-50"
+                    style={{
+                      borderColor: "var(--accent)",
+                      background: "var(--surface)",
+                      color: "var(--accent-strong)",
+                    }}
                   >
                     この招待を取り消す
                   </button>
+                )}
+                  </>
                 )}
               </li>
             );

@@ -1,8 +1,8 @@
 "use client";
 
-// 設定画面: プロフィール編集（基本情報 / カードの追加・削除）/ 宣伝ページ ON・OFF と URL /
+// 設定画面: プロフィール編集（基本情報 / ホームに載せる内容の追加・削除）/ 公開ページ ON・OFF と URL /
 // 招待の作成（一般ユーザーは直接招待のみ = リンク1本で本人と相手が直接繋がる。
-// 橋渡しセット = リンク2本で2人を繋ぐ形は運営のみ。ジャンル必須。
+// 橋渡し = リンク2本で2人を繋ぐ形は運営のみ。ジャンル必須。
 // クールダウン = 一般ユーザーは前回作成から3日、運営は無制限。Ao 決定 2026-10-28）。
 // 自分のページの見た目はトップ（ホームパネル）と公開ページ側が担い、ここは設定に専念する。
 import { useCallback, useEffect, useState } from "react";
@@ -25,6 +25,7 @@ import {
   updateRows,
 } from "../../lib/supabase";
 import LinkActions from "../link-actions";
+import PushSection from "./push-section";
 import type { Gender, Genre, IntroSet, Profile, ProfileCard } from "../../lib/types";
 
 export default function MeClient() {
@@ -38,6 +39,15 @@ export default function MeClient() {
   const [phase, setPhase] = useState<"loading" | "error" | "banned" | "ready">("loading");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  // 繋がり成立済みの招待行は折りたたむ（詳細はボタンで開く。Ao 指示 2026-10-29）
+  const [expandedDone, setExpandedDone] = useState<Set<string>>(new Set());
+  const toggleDone = (id: string) =>
+    setExpandedDone((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   // 編集用ローカル状態
   const [name, setName] = useState("");
@@ -169,11 +179,11 @@ export default function MeClient() {
 
   const addCard = async () => {
     if (!cardTitle.trim()) {
-      setNotice("カードのタイトルを入力してください。");
+      setNotice("タイトルを入力してください。");
       return;
     }
     if (cardKind === "link" && !/^https?:\/\//.test(cardUrl.trim())) {
-      setNotice("リンクカードのURLは https:// から入力してください。");
+      setNotice("リンクのURLは https:// から入力してください。");
       return;
     }
     setBusy(true);
@@ -191,14 +201,14 @@ export default function MeClient() {
       await load();
     } catch (e) {
       console.error(e);
-      setNotice("カードを追加できませんでした。");
+      setNotice("追加できませんでした。");
     } finally {
       setBusy(false);
     }
   };
 
   const removeCard = async (id: number) => {
-    if (!window.confirm("このカードを削除しますか？")) return;
+    if (!window.confirm("これを削除しますか？")) return;
     setBusy(true);
     try {
       await deleteRows("profile_cards", `id=eq.${id}`);
@@ -228,7 +238,7 @@ export default function MeClient() {
         note: newNote.trim() ? newNote.trim() : null,
       });
       setNewNote("");
-      setNotice("紹介セットを作りました。リンクを2人に1本ずつ渡してください。");
+      setNotice("招待を作りました。リンクを2人に1本ずつ渡してください。");
       await load();
     } catch (e) {
       console.error(e);
@@ -279,7 +289,7 @@ export default function MeClient() {
       !window.confirm(
         st.direct
           ? "この招待を取り消しますか？招待リンクは無効になります。"
-          : "この紹介セットを取り消しますか？リンクは両方とも無効になります。",
+          : "この招待を取り消しますか？リンクは両方とも無効になります。",
       )
     )
       return;
@@ -296,7 +306,7 @@ export default function MeClient() {
             : "取り消せませんでした。",
         );
       } else {
-        setNotice("紹介セットを取り消しました。");
+        setNotice("招待を取り消しました。");
         await load();
       }
     } catch (e) {
@@ -419,10 +429,12 @@ export default function MeClient() {
           </div>
         </section>
 
+        <PushSection session={session} />
+
         <section className={sectionCls} style={sectionStyle}>
-          <h2 className="text-sm font-bold">プロフィールカード</h2>
+          <h2 className="text-sm font-bold">ホームに載せる内容</h2>
           <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
-            リンクや自己紹介をカードで並べられます。宣伝ページにも同じカードが出ます。
+            リンクや短い文を並べて、あなたのホームと公開ページに出すものです。
           </p>
           {cards.length > 0 && (
             <ul className="mt-3 space-y-2">
@@ -495,7 +507,7 @@ export default function MeClient() {
               className="w-full rounded-full border py-2 text-sm font-bold disabled:opacity-50"
               style={{ borderColor: "var(--accent)", color: "var(--accent-strong)" }}
             >
-              カードを追加
+              追加する
             </button>
           </div>
         </section>
@@ -506,32 +518,43 @@ export default function MeClient() {
             <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
               あなたは「ログインなし」で参加しています。情報はこの端末のブラウザに
               保存されているため、別の端末やブラウザでは開けません。
-              ゲストの間は、招待の作成と宣伝ページは使えません。
+              ゲストの間は、招待の作成と公開ページは使えません。
             </p>
           </section>
         )}
 
         {!me.is_guest && (
         <section className={sectionCls} style={sectionStyle}>
-          <h2 className="text-sm font-bold">宣伝ページ</h2>
+          <h2 className="text-sm font-bold">公開ページ</h2>
           <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            ONにすると、ログインしていない人にも見える公開ページが有効になります。
+            オンにすると、ログインしていない人にも見える、あなたの公開ページが有効になります。
           </p>
           <div className="mt-3 flex items-center justify-between">
-            <span className="text-sm">{me.promo_on ? "公開中" : "非公開"}</span>
+            <span className="text-sm font-bold">
+              公開ページ：{me.promo_on ? "オン" : "オフ"}
+            </span>
             <button
               type="button"
+              role="switch"
+              aria-checked={me.promo_on}
+              aria-label="公開ページのオン・オフ"
               disabled={busy}
               onClick={togglePromo}
-              className="rounded-full px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-              style={{ background: me.promo_on ? "var(--muted)" : "var(--accent)" }}
+              className="relative h-7 w-12 shrink-0 rounded-full disabled:opacity-50"
+              style={{ background: me.promo_on ? "var(--accent)" : "var(--line)" }}
             >
-              {me.promo_on ? "OFFにする" : "ONにする"}
+              <span
+                className="absolute top-0.5 h-6 w-6 rounded-full shadow"
+                style={{
+                  background: "var(--surface)",
+                  left: me.promo_on ? "1.375rem" : "0.125rem",
+                }}
+              />
             </button>
           </div>
           {me.promo_on && promoUrl && (
             <>
-              <p className="mt-2 break-all rounded-xl px-3 py-2 text-xs" style={{ background: "var(--accent-soft)" }}>
+              <p className="url-break mt-3 rounded-xl px-3 py-2 text-xs" style={{ background: "var(--accent-soft)" }}>
                 {promoUrl}
               </p>
               <LinkActions url={promoUrl} />
@@ -543,13 +566,12 @@ export default function MeClient() {
         {!me.is_guest && (
         <section className={sectionCls} style={sectionStyle}>
           <h2 className="text-sm font-bold">
-            {me.is_operator ? "紹介セット（リンク2本で1セット）" : "招待リンク"}
+            {me.is_operator ? "2人を繋ぐ招待" : "招待リンク"}
           </h2>
           {me.is_operator ? (
             <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-              紹介は、あなたが2人を繋ぐ「橋渡し」です。セットを作るとリンクが2本できて、
-              2人に1本ずつ渡します。両方がリンクを開くと、その2人の繋がりが始まります
-              （連動スタート）。あなた自身は繋がりには入りません。
+              あなたが2人を繋ぐ「橋渡し」の招待です。リンクが2本できるので、2人に1本ずつ渡してください。
+              両方が開くと、その2人の繋がりが始まります。あなた自身は繋がりには入りません。
               運営アカウントは制限なく作れます。
             </p>
           ) : (
@@ -611,7 +633,7 @@ export default function MeClient() {
               className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-40"
               style={{ background: "var(--accent)" }}
             >
-              {canCreateSet ? "紹介セットを作る" : `次に作れるまで ${formatRemaining(cooldownMs)}`}
+              {canCreateSet ? "2人を繋ぐ招待を作る" : `次に作れるまで ${formatRemaining(cooldownMs)}`}
             </button>
           )}
           {me.is_operator ? (
@@ -651,6 +673,7 @@ export default function MeClient() {
             <ul className="mt-4 space-y-3">
               {sets.map((st) => {
                 const both = Boolean(st.joined_by_a && st.joined_by_b);
+                const collapsed = both && !expandedDone.has(st.id);
                 return (
                   <li
                     key={st.id}
@@ -679,6 +702,19 @@ export default function MeClient() {
                         {both ? "繋がり成立" : setVoidReason(st) ? "失効" : "成立待ち"}
                       </span>
                     </p>
+                    {both && (
+                      <button
+                        type="button"
+                        onClick={() => toggleDone(st.id)}
+                        aria-expanded={!collapsed}
+                        className="mt-2 text-xs font-bold underline underline-offset-2"
+                        style={{ color: "var(--accent-strong)" }}
+                      >
+                        {collapsed ? "詳細をひらく" : "詳細をとじる"}
+                      </button>
+                    )}
+                    {!collapsed && (
+                      <>
                     {st.note && (
                       <p className="mt-1.5 text-xs font-bold">送り先メモ：{st.note}</p>
                     )}
@@ -695,14 +731,14 @@ export default function MeClient() {
                         <>
                           <div>
                             <p className="text-[11px] font-bold">
-                              リンクA ・ {urlStatus(st, st.joined_by_a)}
+                              1人目用リンク ・ {urlStatus(st, st.joined_by_a)}
                             </p>
                             <p className="break-all text-xs">{`${origin}/i/${st.code_a}`}</p>
                             <LinkActions url={`${origin}/i/${st.code_a}`} />
                           </div>
                           <div>
                             <p className="text-[11px] font-bold">
-                              リンクB ・ {urlStatus(st, st.joined_by_b)}
+                              2人目用リンク ・ {urlStatus(st, st.joined_by_b)}
                             </p>
                             <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
                             <LinkActions url={`${origin}/i/${st.code_b}`} />
@@ -715,11 +751,17 @@ export default function MeClient() {
                         type="button"
                         disabled={busy}
                         onClick={() => voidSet(st)}
-                        className="mt-2 text-xs underline underline-offset-2 disabled:opacity-50"
-                        style={{ color: "var(--muted)" }}
+                        className="mt-3 rounded-full border px-4 py-1.5 text-xs font-bold disabled:opacity-50"
+                        style={{
+                          borderColor: "var(--accent)",
+                          background: "var(--surface)",
+                          color: "var(--accent-strong)",
+                        }}
                       >
-                        {st.direct ? "この招待を取り消す" : "このセットを取り消す"}
+                        この招待を取り消す
                       </button>
+                    )}
+                      </>
                     )}
                   </li>
                 );

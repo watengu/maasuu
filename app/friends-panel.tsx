@@ -81,7 +81,8 @@ export default function FriendsPanel({
       ) : (
         <ul className="mt-3 space-y-3">
           {sorted.map(({ conn, partner, introducer }) => {
-            const gone = conn.state === "gone";
+            // 終了表示は gone（期限切れ）と ended（繋がりを切った）で共通にする
+            const gone = conn.state !== "active";
             return (
               <li key={conn.id}>
                 <Link

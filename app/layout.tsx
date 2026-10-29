@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Noto_Sans_JP, Noto_Serif_JP } from "next/font/google";
 import "./globals.css";
 
@@ -27,6 +27,11 @@ export const metadata: Metadata = {
   title: "マァスゥ",
   description:
     "紹介制の小さなSNS。繋がりには期限があり、メッセージは24時間で消えます。残らないからこそ、軽く話せる場所。",
+  manifest: "/manifest.webmanifest",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#c25e7e",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

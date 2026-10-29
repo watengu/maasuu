@@ -86,7 +86,8 @@ export type GrantEntitlementResult =
   | { status: "ok" }
   | { status: "error"; reason: string };
 
-export type ConnectionState = "active" | "gone";
+/** active=進行中 / gone=期限切れで終了 / ended=当事者が「繋がりを切る」で終了（migration-ended-state.sql） */
+export type ConnectionState = "active" | "gone" | "ended";
 
 export type Connection = {
   id: string;
@@ -104,6 +105,18 @@ export type Connection = {
   /** 紹介セットから引き継いだジャンル（このペアのテーマ） */
   genre: Genre | null;
   created_at: string;
+};
+
+/** Web Push 購読（migration-push.sql。本人の行だけ読み書き可） */
+export type PushSubscription = {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type TurnKind = "stamp" | "text";

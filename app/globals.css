@@ -26,10 +26,23 @@
   --font-display: var(--font-display);
 }
 
+/* 横はみ出し対策（画面の揺れ防止）: overflow-x: clip はスクロールコンテナを
+   作らないので、position: sticky のヘッダー/フッターを壊さずに横スクロールだけ止める */
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body), "Hiragino Kaku Gothic ProN", sans-serif;
+}
+
+/* 長い URL（招待リンク・公開ページ URL）の折り返し用 */
+.url-break {
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 /* トーク画面のスライドイン（右から軽く入る。ジェスチャは持たず、登場アニメーションのみ） */

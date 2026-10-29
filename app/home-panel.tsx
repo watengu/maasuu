@@ -19,6 +19,15 @@ export default function HomePanel({
   return (
     <div className="px-4 py-6">
       <ProfilePageView profile={me} cards={cards} />
+      {cards.length === 0 && (
+        <p className="mt-2 text-center text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+          リンクや短い文を並べて、あなたのページと公開ページに出すものです。
+          <Link href="/me" className="underline underline-offset-2">
+            設定
+          </Link>
+          から追加できます。
+        </p>
+      )}
       <div className="mt-10 text-center text-xs" style={{ color: "var(--muted)" }}>
         {!me.is_guest &&
           (me.promo_on && me.promo_code ? (

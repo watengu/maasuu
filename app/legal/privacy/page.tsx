@@ -15,7 +15,7 @@ export default function PrivacyPage() {
           <h2 className="font-bold">1. 取得する情報</h2>
           <ul className="mt-1 list-disc space-y-1 pl-5">
             <li>Googleログインに伴うメールアドレスとアカウント識別子</li>
-            <li>プロフィール情報（名前、アイコン画像URL、ステータス、性別＝自己申告、カードの内容）</li>
+            <li>プロフィール情報（名前、アイコン画像URL、ステータス、性別＝自己申告、ホームに載せる内容）</li>
             <li>やりとりの記録（スタンプの種類、メッセージ本文、送信日時）</li>
             <li>通報の記録</li>
           </ul>
@@ -43,10 +43,10 @@ export default function PrivacyPage() {
           </p>
         </section>
         <section>
-          <h2 className="font-bold">5. 宣伝ページ</h2>
+          <h2 className="font-bold">5. 公開ページ</h2>
           <p className="mt-1">
-            宣伝ページをONにした場合、そのプロフィールとカードは、ログインしていない人を含む
-            誰からでも閲覧できる状態になります。OFFにすれば公開は止まります。
+            公開ページをオンにした場合、そのプロフィールとホームに載せる内容は、ログインしていない人を含む
+            誰からでも閲覧できる状態になります。オフにすれば公開は止まります。
           </p>
         </section>
         <section>

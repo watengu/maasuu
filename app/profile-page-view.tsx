@@ -64,7 +64,7 @@ export default function ProfilePageView({
         </ul>
       ) : (
         <p className="mt-6 text-center text-xs" style={{ color: "var(--muted)" }}>
-          カードはまだありません。
+          ホームに載せる内容はまだありません。
         </p>
       )}
     </>

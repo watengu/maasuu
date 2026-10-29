@@ -5,7 +5,8 @@
 // （セッション確認の集約）。パネルは両方ともマウントしたままにし、スライドしても
 // 状態は保持される。各パネルはデータが届くまでスケルトンを表示する。
 // 切替は下部タブバー（つながり／ホーム）のタップが主で、スワイプ（ポインタの横
-// ドラッグ＋スナップ）と上部インジケータのタップも併設する。
+// ドラッグ＋スナップ）も併設する。上部セグメントは廃止し、ナビは下部タブに一本化
+// （Ao 指示 2026-10-29: 上下で名前が揃っていなかったため）。
 // 縦スクロールとは touch-action: pan-y と縦方向の動き優先の判定で喧嘩させない。
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
@@ -32,7 +33,6 @@ type Phase =
   | { kind: "banned" }
   | { kind: "ready"; session: Session; me: Profile };
 
-const PANEL_LABELS = ["友人一覧", "ホーム"] as const;
 // 下部タブバーのラベル（タップ切替が主、スワイプは補助。Ao 決定 2026-10-29）
 const TAB_LABELS = ["つながり", "ホーム"] as const;
 
@@ -268,7 +268,7 @@ export default function ShellClient() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-dvh flex-col overflow-x-clip">
       <header
         className="sticky top-0 z-10 border-b"
         style={{ background: "var(--bg)", borderColor: "var(--line)" }}
@@ -293,28 +293,6 @@ export default function ShellClient() {
               ログアウト
             </button>
           </nav>
-        </div>
-        <div className="mx-auto flex w-full max-w-md gap-2 px-4 pb-3">
-          {PANEL_LABELS.map((label, i) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => setPanel(i)}
-              aria-pressed={panel === i}
-              className="flex-1 rounded-full py-1.5 text-sm"
-              style={
-                panel === i
-                  ? { background: "var(--accent)", color: "#fff", fontWeight: 700 }
-                  : {
-                      border: "1px solid var(--line)",
-                      background: "var(--surface)",
-                      color: "var(--muted)",
-                    }
-              }
-            >
-              {label}
-            </button>
-          ))}
         </div>
       </header>
       <main className="mx-auto w-full max-w-md flex-1">
