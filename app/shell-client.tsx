@@ -21,13 +21,14 @@ import ProfileCreateForm from "./profile-create-form";
 import FriendsPanel, { type ConnView } from "./friends-panel";
 import HomePanel from "./home-panel";
 import { judgeConnection, rulesFor, type TurnCount } from "../lib/engine";
-import { selectOne, selectRows, updateRows } from "../lib/supabase";
+import { rpc, selectOne, selectRows, updateRows } from "../lib/supabase";
 import type { Connection, Profile, ProfileCard } from "../lib/types";
 
 type Phase =
   | { kind: "loading" }
   | { kind: "loggedOut" }
   | { kind: "needProfile"; session: Session }
+  | { kind: "needInvite" }
   | { kind: "banned" }
   | { kind: "ready"; session: Session; me: Profile };
 
@@ -80,7 +81,20 @@ export default function ShellClient() {
         if (meRes.status === "rejected") throw meRes.reason;
         const me = meRes.value;
         if (!me) {
-          setPhase({ kind: "needProfile", session });
+          // 登録ゲート（2026-10-29）: 紹介リンク経由で登録資格（entitlement）が
+          // 付いた人だけプロフィール作成フォームに進める。資格がなければ
+          // 「紹介が必要です」画面を出す。RPC 自体が例外（関数未作成など）の
+          // 移行期は、安全策として従来どおりフォームを出す。
+          let entitled = true;
+          try {
+            entitled = await rpc<boolean>("has_invite_entitlement", {});
+          } catch {
+            entitled = true;
+          }
+          if (cancelled) return;
+          setPhase(
+            entitled ? { kind: "needProfile", session } : { kind: "needInvite" },
+          );
           return;
         }
         if (me.banned) {
@@ -204,6 +218,10 @@ export default function ShellClient() {
 
   if (phase.kind === "banned") {
     return <BannedScreen />;
+  }
+
+  if (phase.kind === "needInvite") {
+    return <NeedInviteScreen />;
   }
 
   if (phase.kind === "needProfile") {
@@ -423,6 +441,39 @@ function HomeSkeleton() {
         ))}
       </div>
     </div>
+  );
+}
+
+// 登録ゲート: ログイン済みだが紹介リンク経由の登録資格がない人向けの画面。
+// プロフィール作成フォームは出さない（資格がないと INSERT も RLS で拒否される）。
+function NeedInviteScreen() {
+  const onLogout = async () => {
+    await signOut();
+    window.location.replace("/");
+  };
+  return (
+    <main className="mx-auto w-full max-w-md px-4 py-16 text-center">
+      <h1
+        className="text-2xl font-bold tracking-wide"
+        style={{ color: "var(--accent-strong)" }}
+      >
+        マァスゥ
+      </h1>
+      <h2 className="mt-8 text-lg font-bold">紹介が必要です</h2>
+      <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
+        マァスゥは紹介制です。参加するには紹介リンクが必要です。
+        <br />
+        リンクをお持ちの場合は、そのリンクから開いてください。
+      </p>
+      <button
+        type="button"
+        onClick={onLogout}
+        className="mt-8 w-full rounded-full border py-3 text-sm font-bold"
+        style={{ borderColor: "var(--accent)", color: "var(--accent-strong)" }}
+      >
+        ログアウト
+      </button>
+    </main>
   );
 }
 
