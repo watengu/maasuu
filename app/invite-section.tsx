@@ -15,7 +15,7 @@ import {
 import { formatDateTimeJST, formatRemaining } from "../lib/format";
 import { GENRE_OPTIONS, genreLabel } from "../lib/genres";
 import { insertRow, rpc, selectRows } from "../lib/supabase";
-import type { Genre, IntroSet, Profile } from "../lib/types";
+import type { Connection, Genre, IntroSet, Profile } from "../lib/types";
 
 export default function InviteSection({
   session,
@@ -26,7 +26,9 @@ export default function InviteSection({
 }) {
   const [sets, setSets] = useState<IntroSet[]>([]);
   const [joinedNames, setJoinedNames] = useState<Map<string, string>>(new Map());
+  const [connBySet, setConnBySet] = useState<Map<string, Connection>>(new Map());
   const [newGenre, setNewGenre] = useState<Genre>("chat");
+  const [newNote, setNewNote] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,6 +53,18 @@ export default function InviteSection({
     } else {
       setJoinedNames(new Map());
     }
+    // ダッシュボード表示用: 自分が当事者Aの接続（ダイレクト招待の接続）を引いて、
+    // セットごとの「繋がりの残り時間」を出せるようにする（既存データの範囲内）。
+    const conns = await selectRows<Connection>(
+      `connections?user_a=eq.${session.userId}&select=id,intro_set_id,deadline,state`,
+    ).catch(() => [] as Connection[]);
+    setConnBySet(
+      new Map(
+        conns
+          .filter((c): c is Connection & { intro_set_id: string } => Boolean(c.intro_set_id))
+          .map((c) => [c.intro_set_id, c]),
+      ),
+    );
     setLoaded(true);
   }, [session.userId]);
 
@@ -90,7 +104,9 @@ export default function InviteSection({
         genre: newGenre,
         direct: true,
         joined_by_a: session.userId,
+        note: newNote.trim() ? newNote.trim() : null,
       });
+      setNewNote("");
       setNotice(
         me.is_operator
           ? "運営用招待を作りました。「招待リンク」を友人に渡してください。参加した瞬間に、あなたとの繋がりが始まります。"
@@ -166,6 +182,18 @@ export default function InviteSection({
           ? "あなた自身が相手になる招待です。リンクは1本だけできて、開いた人が参加した瞬間に、あなたとの繋がりが始まります。運営アカウントは制限なく作れます。"
           : "招待リンクを1本作って相手に渡すと、相手が参加した瞬間に、あなたとの繋がりが始まります。招待は3日に1つまで作れます。"}
       </p>
+      <p className="mt-3 text-[11px] font-bold">繋がったあとの流れ</p>
+      <ul
+        className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] leading-relaxed"
+        style={{ color: "var(--muted)" }}
+      >
+        <li>初日（24時間）はスタンプだけのやり取りです。</li>
+        <li>テキストは、2人とも「テキストを許可」して、24時間が過ぎると使えます。</li>
+        <li>メッセージは24時間で見えなくなります。</li>
+        <li>
+          繋がりには期限があります。期限までに往復ターンを達成すると期限が延びます（異性間は3日で往復3ターン・達成で+3日、同性間は7日で往復2ターン・達成で+7日）。残り時間と往復の進み具合は、トーク画面の上部に表示されます。
+        </li>
+      </ul>
       {notice && (
         <p
           className="mt-3 rounded-xl border px-3 py-2 text-center text-xs"
@@ -197,6 +225,15 @@ export default function InviteSection({
           </button>
         ))}
       </div>
+      <p className="mt-3 text-xs font-bold">送り先メモ（任意）</p>
+      <input
+        value={newNote}
+        onChange={(e) => setNewNote(e.target.value.slice(0, 60))}
+        maxLength={60}
+        placeholder="例：○○さん用"
+        className="mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none"
+        style={{ borderColor: "var(--line)", background: "var(--surface)" }}
+      />
       {me.is_operator ? (
         <button
           type="button"
@@ -257,6 +294,37 @@ export default function InviteSection({
                     {both ? "繋がり成立" : setVoidReason(st) ? "失効" : "成立待ち"}
                   </span>
                 </p>
+                {(() => {
+                  const vr = setVoidReason(st);
+                  const linked = connBySet.get(st.id);
+                  const statusLabel =
+                    vr === "取り消し"
+                      ? "失効（取り消し済み）"
+                      : vr === "期限切れ"
+                        ? "期限切れ"
+                        : both
+                          ? linked?.state === "gone"
+                            ? "接続済み（終了）"
+                            : "接続済み"
+                          : "未使用";
+                  const remainLabel =
+                    both && linked && linked.state === "active"
+                      ? `繋がりの残り ${formatRemaining(Math.max(0, new Date(linked.deadline).getTime() - nowMs))}`
+                      : !both && !vr && me.is_operator
+                        ? `失効まで ${formatRemaining(Math.max(0, new Date(st.created_at).getTime() + SET_EXPIRE_MS - nowMs))}`
+                        : null;
+                  return (
+                    <div className="mt-2">
+                      {st.note && (
+                        <p className="text-xs font-bold">送り先メモ：{st.note}</p>
+                      )}
+                      <p className="mt-0.5 text-[11px]" style={{ color: "var(--muted)" }}>
+                        状態：{statusLabel}
+                        {remainLabel && ` ・ ${remainLabel}`}
+                      </p>
+                    </div>
+                  );
+                })()}
                 <div className="mt-2">
                   <p className="text-[11px] font-bold">
                     招待リンク ・ {urlStatus(st, st.joined_by_b)}
