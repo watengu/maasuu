@@ -23,11 +23,30 @@ const body = Noto_Sans_JP({
   weight: ["400", "500", "700"],
 });
 
+// 紹介文は description / OG / Twitter で同一文言を使う（共有プレビューと
+// 検索結果で言い回しがずれないように一本化）。
+const DESCRIPTION =
+  "紹介制の小さなSNS。繋がりには期限があり、メッセージは24時間で消えます。残らないからこそ、軽く話せる場所。";
+
 export const metadata: Metadata = {
   title: "マァスゥ",
-  description:
-    "紹介制の小さなSNS。繋がりには期限があり、メッセージは24時間で消えます。残らないからこそ、軽く話せる場所。",
+  description: DESCRIPTION,
   manifest: "/manifest.webmanifest",
+  metadataBase: new URL("https://maasuu.vercel.app"),
+  openGraph: {
+    title: "マァスゥ",
+    description: DESCRIPTION,
+    url: "https://maasuu.vercel.app",
+    siteName: "マァスゥ",
+    type: "website",
+    images: [{ url: "/icons/icon-512.png", width: 512, height: 512 }],
+  },
+  twitter: {
+    card: "summary",
+    title: "マァスゥ",
+    description: DESCRIPTION,
+    images: ["/icons/icon-512.png"],
+  },
 };
 
 export const viewport: Viewport = {

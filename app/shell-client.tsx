@@ -26,6 +26,11 @@ import { rpc, selectOne, selectRows, updateRows } from "../lib/supabase";
 import type { Connection, Profile, ProfileCard } from "../lib/types";
 
 type Phase =
+  // 初期描画（セッション未確認）。全員まず入口ページを描くことで、サーバー
+  // HTML にも表紙が乗り、未ログインの人に「読み込んでいます…」を見せない。
+  // セッションがある人だけ effect 側で loading に進める（表紙は一瞬の
+  // スプラッシュとして見えるだけ）。
+  | { kind: "splash" }
   | { kind: "loading" }
   | { kind: "loggedOut" }
   | { kind: "needProfile"; session: Session }
@@ -37,7 +42,7 @@ type Phase =
 const TAB_LABELS = ["つながり", "ホーム"] as const;
 
 export default function ShellClient() {
-  const [phase, setPhase] = useState<Phase>({ kind: "loading" });
+  const [phase, setPhase] = useState<Phase>({ kind: "splash" });
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const [views, setViews] = useState<ConnView[] | null>(null);
   const [cards, setCards] = useState<ProfileCard[] | null>(null);
@@ -55,6 +60,8 @@ export default function ShellClient() {
         setPhase({ kind: "loggedOut" });
         return;
       }
+      // セッションがある人だけ、ここから従来の読み込み表示に進める。
+      setPhase({ kind: "loading" });
       const pending = takePendingPath();
       if (pending) setPendingPath(pending);
       // 自分のカードは他の取得と独立なので、ホームパネル用に並行して先行取得する。
@@ -202,6 +209,10 @@ export default function ShellClient() {
       e.stopPropagation();
     }
   };
+
+  if (phase.kind === "splash") {
+    return <LandingScreen />;
+  }
 
   if (phase.kind === "loading") {
     return (
