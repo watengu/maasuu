@@ -25,6 +25,7 @@ import {
   updateRows,
 } from "../../lib/supabase";
 import LinkActions from "../link-actions";
+import { PROFILE_THEMES } from "../profile-page-view";
 import PushSection from "./push-section";
 import type { Gender, Genre, IntroSet, Profile, ProfileCard } from "../../lib/types";
 
@@ -52,6 +53,8 @@ export default function MeClient() {
   // 編集用ローカル状態
   const [name, setName] = useState("");
   const [iconUrl, setIconUrl] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");
+  const [theme, setTheme] = useState("default");
   const [statusLine, setStatusLine] = useState("");
   const [gender, setGender] = useState<Gender>("female");
 
@@ -79,6 +82,10 @@ export default function MeClient() {
     setMe(profile);
     setName(profile.display_name);
     setIconUrl(profile.icon_url ?? "");
+    setCoverUrl(profile.cover_url ?? "");
+    setTheme(
+      profile.theme && PROFILE_THEMES[profile.theme] ? profile.theme : "default",
+    );
     setStatusLine(profile.status_line);
     setGender(profile.gender ?? "female");
     // カードと紹介セットは互いに独立（どちらも userId のみに依存）なので並列取得する。
@@ -151,6 +158,8 @@ export default function MeClient() {
       await updateRows("profiles", `id=eq.${session.userId}`, {
         display_name: name.trim(),
         icon_url: iconUrl.trim() || null,
+        cover_url: coverUrl.trim() || null,
+        theme,
         status_line: statusLine.trim(),
         gender,
       });
@@ -382,6 +391,46 @@ export default function MeClient() {
               <label className="mb-1 block text-xs font-bold">アイコン画像URL</label>
               <input className={inputCls} style={inputStyle} value={iconUrl}
                 onChange={(e) => setIconUrl(e.target.value)} placeholder="https://..." />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold">背景画像URL</label>
+              <input className={inputCls} style={inputStyle} value={coverUrl}
+                onChange={(e) => setCoverUrl(e.target.value)} placeholder="https://..." />
+              <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
+                あなたのホームと公開ページの背景いっぱいに表示されます。
+              </p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold">テーマ（背景の色）</label>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(PROFILE_THEMES).map(([key, t]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setTheme(key)}
+                    className="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm"
+                    style={
+                      theme === key
+                        ? {
+                            borderColor: "var(--accent)",
+                            background: "var(--accent-soft)",
+                            color: "var(--accent-strong)",
+                            fontWeight: 700,
+                          }
+                        : { borderColor: "var(--line)", background: "var(--surface)" }
+                    }
+                  >
+                    <span
+                      className="h-4 w-4 shrink-0 rounded-full border border-white shadow"
+                      style={{ backgroundImage: t.gradient }}
+                    />
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
+                背景画像URLを設定している場合は、テーマより背景画像が優先されます。
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-bold">性別（自己申告）</label>

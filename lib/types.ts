@@ -6,6 +6,10 @@ export type Profile = {
   id: string;
   display_name: string;
   icon_url: string | null;
+  /** 背景画像URL（設定時はテーマより優先。migration-cover-theme.sql） */
+  cover_url: string | null;
+  /** 背景テーマのキー（PROFILE_THEMES in app/profile-page-view.tsx。null は default 扱い） */
+  theme: string | null;
   status_line: string;
   gender: Gender | null;
   promo_on: boolean;
