@@ -12,11 +12,11 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import {
   getSession,
-  signInWithGoogle,
   signOut,
   takePendingPath,
   type Session,
 } from "./auth-client";
+import LandingScreen from "./landing";
 import BannedScreen from "./banned-screen";
 import ProfileCreateForm from "./profile-create-form";
 import FriendsPanel, { type ConnView } from "./friends-panel";
@@ -213,7 +213,7 @@ export default function ShellClient() {
   }
 
   if (phase.kind === "loggedOut") {
-    return <LoginScreen />;
+    return <LandingScreen />;
   }
 
   if (phase.kind === "banned") {
@@ -457,48 +457,3 @@ function NeedInviteScreen() {
   );
 }
 
-function LoginScreen() {
-  return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-12">
-      <div className="text-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/stamps/stamp-07.png" alt="まぁ＆すぅ" className="mx-auto w-36" />
-        <h1
-          className="mt-2 text-3xl font-bold tracking-wide"
-          style={{ color: "var(--accent-strong)" }}
-        >
-          マァスゥ
-        </h1>
-        <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
-          紹介制の、小さなSNS。
-          <br />
-          繋がった日から、期限との競争が始まります。
-          <br />
-          やりとりを続けないと、繋がりは消えてしまいます。
-          <br />
-          メッセージも24時間で消えるから、残らないぶんだけ軽く話せます。
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={signInWithGoogle}
-        className="mt-8 w-full rounded-full py-3 text-sm font-bold text-white"
-        style={{ background: "var(--accent)" }}
-      >
-        Googleでログイン
-      </button>
-      <p className="mt-3 text-center text-xs" style={{ color: "var(--muted)" }}>
-        繋がりは紹介から生まれます。検索機能はありません。
-      </p>
-      <footer className="mt-auto pt-10 text-center text-xs" style={{ color: "var(--muted)" }}>
-        <Link href="/legal/terms" className="underline underline-offset-2">
-          利用規約
-        </Link>
-        <span className="mx-2">・</span>
-        <Link href="/legal/privacy" className="underline underline-offset-2">
-          プライバシーポリシー
-        </Link>
-      </footer>
-    </main>
-  );
-}
