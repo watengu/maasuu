@@ -42,6 +42,8 @@ export type IntroSet = {
   genre: Genre;
   /** true = ダイレクト招待（紹介者自身が当事者Aとして着席済み）。false = 従来の橋渡し型 */
   direct: boolean;
+  /** 送り先メモ（任意。発行した本人の一覧でのみ使う。migration-intro-note.sql） */
+  note: string | null;
   /** 取り消し（失効）の時刻。null なら有効 */
   voided_at: string | null;
   created_at: string;
@@ -79,6 +81,11 @@ export type IntroPreview = {
   } | null;
 };
 
+/** grant_invite_entitlement RPC の戻り値（登録ゲートの資格付与。invite-gate-migration.sql） */
+export type GrantEntitlementResult =
+  | { status: "ok" }
+  | { status: "error"; reason: string };
+
 export type ConnectionState = "active" | "gone";
 
 export type Connection = {
@@ -110,4 +117,6 @@ export type Turn = {
   body: string | null;
   created_at: string;
   expires_at: string;
+  /** 既読時刻（相手が接続画面を開いて取得した時点で立つ。migration-read-at.sql） */
+  read_at: string | null;
 };
