@@ -355,7 +355,7 @@ export default function ProfilePageView({
       )}
 
       <div
-        className={`relative flex flex-1 flex-col px-5 ${compact ? "pb-9 pt-4" : "pb-14 pt-6"}`}
+        className={`relative flex min-w-0 flex-1 flex-col px-5 ${compact ? "pb-9 pt-4" : "pb-[calc(5rem+env(safe-area-inset-bottom))] pt-6"}`}
       >
         <div
           className="text-[13px] font-bold tracking-[0.18em]"
@@ -462,7 +462,7 @@ export default function ProfilePageView({
               return (
                 <li
                   key={c.id}
-                  className="rounded-[20px] px-4 py-3.5 text-sm leading-relaxed backdrop-blur-md"
+                  className="rounded-[20px] px-4 py-3.5 text-sm leading-relaxed break-words backdrop-blur-md"
                   style={
                     dark
                       ? {
@@ -481,7 +481,7 @@ export default function ProfilePageView({
             })}
           </ul>
         ) : (
-          <p className="mt-7 text-center text-xs opacity-85">
+          <p className="mt-7 text-center text-xs text-balance opacity-85">
             ホームに載せる内容はまだありません。
           </p>
         )}

@@ -301,37 +301,31 @@ export default function TalkClient() {
   };
 
   return (
-    <div className="talk-slide-in flex min-h-dvh flex-col overflow-x-clip">
+    <div className="talk-slide-in flex h-dvh flex-col overflow-x-clip">
       <header
-        className="sticky top-0 z-10 border-b"
+        className="border-b"
         style={{ background: "var(--bg)", borderColor: "var(--line)" }}
       >
-        <div className="mx-auto flex w-full max-w-md items-center gap-3 px-4 py-3">
-          <Link href="/" className="text-sm" style={{ color: "var(--muted)" }}>
-            ←
-          </Link>
-          {partner?.icon_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={partner.icon_url} alt="" className="h-9 w-9 rounded-full object-cover" />
-          ) : (
-            <span
-              className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold"
-              style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
-            >
-              {(partner?.display_name ?? "?").slice(0, 1)}
-            </span>
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold">{partner?.display_name ?? "相手"}</p>
-            <p className="truncate text-xs" style={{ color: "var(--muted)" }}>
-              {ended
-                ? "この繋がりは終了しました"
-                : gone
-                  ? "この繋がりは終わりました"
-                  : `${formatRemaining(remainingMs(conn, now))} ・ 往復 ${roundTrips}/${rules.quotaRoundTrips} ・ 今日あと${remainToday}ターン`}
+        <div className="mx-auto w-full max-w-md px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="text-sm" style={{ color: "var(--muted)" }}>
+              ←
+            </Link>
+            {partner?.icon_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={partner.icon_url} alt="" className="h-9 w-9 rounded-full object-cover" />
+            ) : (
+              <span
+                className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold"
+                style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
+              >
+                {(partner?.display_name ?? "?").slice(0, 1)}
+              </span>
+            )}
+            <p className="min-w-0 flex-1 truncate text-sm font-bold">
+              {partner?.display_name ?? "相手"}
             </p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
+            <div className="flex shrink-0 flex-col items-end gap-1">
             <button
               type="button"
               onClick={() => setReportOpen((v) => !v)}
@@ -351,7 +345,15 @@ export default function TalkClient() {
                 繋がりを切る
               </button>
             )}
+            </div>
           </div>
+          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+            {ended
+              ? "この繋がりは終了しました"
+              : gone
+                ? "この繋がりは終わりました"
+                : `${formatRemaining(remainingMs(conn, now))} ・ 往復 ${roundTrips}/${rules.quotaRoundTrips} ・ 今日あと${remainToday}ターン`}
+          </p>
         </div>
         {reportOpen && partner && (
           <div
@@ -386,7 +388,7 @@ export default function TalkClient() {
         )}
       </header>
 
-      <main className="mx-auto w-full max-w-md flex-1 px-4 py-4">
+      <main className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto px-4 py-4">
         {(conn.genre || introducer) && (
           <p className="mb-3 text-center text-[11px]" style={{ color: "var(--muted)" }}>
             {conn.genre && (
@@ -455,7 +457,10 @@ export default function TalkClient() {
           })}
         </ul>
         {visibleTurns.length === 0 && (
-          <p className="py-8 text-center text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+          <p
+            className="whitespace-pre-wrap py-8 text-center text-xs leading-relaxed text-balance"
+            style={{ color: "var(--muted)" }}
+          >
             {ended
               ? "この繋がりは終了しました。"
               : gone
@@ -468,32 +473,38 @@ export default function TalkClient() {
 
       {!finished && (
         <footer
-          className="sticky bottom-0 border-t"
-          style={{ background: "var(--bg)", borderColor: "var(--line)" }}
+          className="border-t"
+          style={{
+            background: "var(--bg)",
+            borderColor: "var(--line)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+          }}
         >
           <div className="mx-auto w-full max-w-md px-4 py-3">
             {!unlocked || dayOne ? (
               <div
-                className="mb-3 rounded-xl px-3 py-2 text-xs leading-relaxed"
+                className="mb-2 rounded-xl px-3 py-2"
                 style={{ background: "var(--surface)", border: "1px solid var(--line)" }}
               >
-                {dayOne ? (
-                  <p>初日はスタンプだけの日です。テキストは明日以降、双方の許可がそろうと使えます。</p>
-                ) : (
-                  <p>テキストは双方の許可がそろうと使えます。</p>
-                )}
-                <p className="mt-1">
-                  あなた：{myOk ? "許可済み" : "未許可"} ／ 相手：{partnerOk ? "許可済み" : "未許可"}
+                <p className="text-[11px] leading-snug" style={{ color: "var(--muted)" }}>
+                  {dayOne
+                    ? "初日はスタンプのみ。テキストは明日以降、双方の許可がそろうと使えます。"
+                    : "テキストは双方の許可がそろうと使えます。"}
                 </p>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={toggleMyOk}
-                  className="mt-2 rounded-full px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-                  style={{ background: "var(--accent)" }}
-                >
-                  {myOk ? "テキスト許可を取り消す" : "テキストを許可する"}
-                </button>
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <p className="text-xs">
+                    あなた：{myOk ? "許可済み" : "未許可"} ／ 相手：{partnerOk ? "許可済み" : "未許可"}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={toggleMyOk}
+                    className="shrink-0 rounded-full px-3 py-1 text-[11px] font-bold text-white disabled:opacity-50"
+                    style={{ background: "var(--accent)" }}
+                  >
+                    {myOk ? "テキスト許可を取り消す" : "テキストを許可する"}
+                  </button>
+                </div>
               </div>
             ) : null}
             <div className="flex items-start gap-2">
@@ -550,18 +561,18 @@ export default function TalkClient() {
               )}
             </div>
             {stampOpen && (
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="mt-3 grid auto-cols-[84px] grid-flow-col grid-rows-2 gap-2 overflow-x-auto pb-1 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent_100%)] [scrollbar-width:none] snap-x [&::-webkit-scrollbar]:hidden">
                 {STAMPS.map((s) => (
                   <button
                     key={s.id}
                     type="button"
                     disabled={busy || remainToday <= 0}
                     onClick={() => send("stamp", s.id)}
-                    className="rounded-xl p-1.5 disabled:opacity-40"
+                    className="h-[84px] w-[84px] snap-start rounded-xl p-1.5 disabled:opacity-40"
                     style={{ background: "var(--surface)", border: "1px solid var(--line)" }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={s.src} alt={s.label} className="w-full" />
+                    <img src={s.src} alt={s.label} className="h-full w-full object-contain" />
                   </button>
                 ))}
               </div>

@@ -19,7 +19,7 @@ export default function HomePanel({
   cards: ProfileCard[];
 }) {
   const footer = (
-    <div className="text-center text-xs leading-relaxed">
+    <div className="text-center text-xs leading-relaxed text-balance">
       {cards.length === 0 && (
         <p className="opacity-85">
           リンクや短い文を並べて、あなたのページと公開ページに出すものです。
@@ -54,8 +54,13 @@ export default function HomePanel({
   );
 
   return (
-    <div className="flex h-full flex-col">
-      <ProfilePageView profile={me} cards={cards} footer={footer} className="min-h-0 flex-1" />
+    <div className="flex h-full min-w-0 flex-col">
+      <ProfilePageView
+        profile={me}
+        cards={cards}
+        footer={footer}
+        className="min-h-0 min-w-0 flex-1"
+      />
     </div>
   );
 }

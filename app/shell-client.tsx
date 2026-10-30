@@ -318,7 +318,7 @@ export default function ShellClient() {
           {/* items-stretch: ホームパネルの全面背景（ProfilePageView）を
               パネル全高に広げるため（第4弾 2026-10-29） */}
           <div className="flex w-[200%] items-stretch" style={trackStyle}>
-            <div className="w-1/2 shrink-0" inert={panel !== 0}>
+            <div className="w-1/2 min-w-0 shrink-0" inert={panel !== 0}>
               {views ? (
                 <FriendsPanel
                   session={session}
@@ -330,7 +330,7 @@ export default function ShellClient() {
                 <FriendsSkeleton />
               )}
             </div>
-            <div className="w-1/2 shrink-0" inert={panel !== 1}>
+            <div className="w-1/2 min-w-0 shrink-0" inert={panel !== 1}>
               {cards ? <HomePanel me={me} cards={cards} /> : <HomeSkeleton />}
             </div>
           </div>
