@@ -29,7 +29,21 @@ import {
 import LinkActions from "../link-actions";
 import ProfilePageView, { PROFILE_THEMES } from "../profile-page-view";
 import PushSection from "./push-section";
-import type { Gender, Genre, IntroSet, Profile, ProfileCard } from "../../lib/types";
+import type {
+  Gender,
+  Genre,
+  IntroSet,
+  Profile,
+  ProfileCard,
+  ProfileCardKind,
+} from "../../lib/types";
+import { normalizeCardKind } from "../../lib/types";
+
+const CARD_KIND_LABEL: Record<ProfileCardKind, string> = {
+  button: "ボタン",
+  picture: "画像カード",
+  text: "テキスト",
+};
 
 export default function MeClient() {
   const [session, setSession] = useState<Session | null>(null);
@@ -61,9 +75,11 @@ export default function MeClient() {
   const [gender, setGender] = useState<Gender>("female");
 
   // カード追加フォーム
-  const [cardKind, setCardKind] = useState<"link" | "text">("link");
+  const [cardKind, setCardKind] = useState<ProfileCardKind>("button");
   const [cardTitle, setCardTitle] = useState("");
   const [cardUrl, setCardUrl] = useState("");
+  const [cardImageUrl, setCardImageUrl] = useState("");
+  const [cardDescription, setCardDescription] = useState("");
 
   const load = useCallback(async () => {
     const s = await getSession();
@@ -189,12 +205,28 @@ export default function MeClient() {
   };
 
   const addCard = async () => {
-    if (!cardTitle.trim()) {
+    const url = cardUrl.trim();
+    const imageUrl = cardImageUrl.trim();
+    if (cardKind === "text") {
+      // テキスト型はタイトル任意・本文が必須
+      if (!cardDescription.trim()) {
+        setNotice("本文を入力してください。");
+        return;
+      }
+    } else if (!cardTitle.trim()) {
       setNotice("タイトルを入力してください。");
       return;
     }
-    if (cardKind === "link" && !/^https?:\/\//.test(cardUrl.trim())) {
+    if (cardKind === "button" && !/^https?:\/\//.test(url)) {
       setNotice("リンクのURLは https:// から入力してください。");
+      return;
+    }
+    if (cardKind !== "button" && url && !/^https?:\/\//.test(url)) {
+      setNotice("URLは https:// から入力してください。");
+      return;
+    }
+    if (cardKind === "picture" && imageUrl && !/^https?:\/\//.test(imageUrl)) {
+      setNotice("画像URLは https:// から入力してください。");
       return;
     }
     setBusy(true);
@@ -204,11 +236,15 @@ export default function MeClient() {
         user_id: session.userId,
         kind: cardKind,
         title: cardTitle.trim(),
-        url: cardKind === "link" ? cardUrl.trim() : null,
+        url: url || null,
+        image_url: cardKind === "picture" ? imageUrl || null : null,
+        description: cardKind === "button" ? null : cardDescription.trim() || null,
         sort: cards.length,
       });
       setCardTitle("");
       setCardUrl("");
+      setCardImageUrl("");
+      setCardDescription("");
       await load();
     } catch (e) {
       console.error(e);
@@ -391,6 +427,30 @@ export default function MeClient() {
     status_line: statusLine,
   };
 
+  // 追加フォームで入力中のカードも、下書きとしてプレビューの末尾に即反映する。
+  const hasDraftCard = Boolean(
+    cardTitle.trim() ||
+      cardUrl.trim() ||
+      cardImageUrl.trim() ||
+      cardDescription.trim(),
+  );
+  const previewCards: ProfileCard[] = hasDraftCard
+    ? [
+        ...cards,
+        {
+          id: -1,
+          user_id: me.id,
+          kind: cardKind,
+          title: cardTitle,
+          url: cardUrl.trim() || null,
+          image_url: cardImageUrl.trim() || null,
+          description: cardDescription.trim() || null,
+          sort: cards.length,
+          created_at: "",
+        },
+      ]
+    : cards;
+
   const inputCls = "w-full rounded-xl border px-3 py-2 text-sm outline-none";
   const inputStyle = { borderColor: "var(--line)", background: "var(--surface)" } as const;
   const sectionCls = "rounded-2xl border p-5";
@@ -424,7 +484,7 @@ export default function MeClient() {
             <div className="h-[430px]">
               <ProfilePageView
                 profile={previewProfile}
-                cards={cards}
+                cards={previewCards}
                 compact
                 className="h-full"
               />
@@ -555,7 +615,7 @@ export default function MeClient() {
                       className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold"
                       style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
                     >
-                      {c.kind === "link" ? "リンク" : "テキスト"}
+                      {CARD_KIND_LABEL[normalizeCardKind(c.kind)]}
                     </span>
                     {c.title}
                   </span>
@@ -594,38 +654,57 @@ export default function MeClient() {
           )}
           <div className="mt-3 space-y-2">
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setCardKind("link")}
-                className="flex-1 rounded-xl border px-3 py-2 text-sm"
-                style={
-                  cardKind === "link"
-                    ? { borderColor: "var(--accent)", background: "var(--accent-soft)", fontWeight: 700 }
-                    : { borderColor: "var(--line)" }
-                }
-              >
-                リンク
-              </button>
-              <button
-                type="button"
-                onClick={() => setCardKind("text")}
-                className="flex-1 rounded-xl border px-3 py-2 text-sm"
-                style={
-                  cardKind === "text"
-                    ? { borderColor: "var(--accent)", background: "var(--accent-soft)", fontWeight: 700 }
-                    : { borderColor: "var(--line)" }
-                }
-              >
-                テキスト
-              </button>
+              {(["button", "picture", "text"] as ProfileCardKind[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setCardKind(k)}
+                  className="flex-1 rounded-xl border px-3 py-2 text-sm"
+                  style={
+                    cardKind === k
+                      ? { borderColor: "var(--accent)", background: "var(--accent-soft)", fontWeight: 700 }
+                      : { borderColor: "var(--line)" }
+                  }
+                >
+                  {CARD_KIND_LABEL[k]}
+                </button>
+              ))}
             </div>
+            {cardKind === "picture" && (
+              <div>
+                <label className="mb-1 block text-xs font-bold">
+                  画像URL（画像カードの主役です）
+                </label>
+                <input className={inputCls} style={inputStyle} value={cardImageUrl}
+                  onChange={(e) => setCardImageUrl(e.target.value)} placeholder="https://..." />
+                <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
+                  未設定のときは、テーマの背景にタイトルを表示します。
+                </p>
+              </div>
+            )}
             <input className={inputCls} style={inputStyle} value={cardTitle} maxLength={80}
               onChange={(e) => setCardTitle(e.target.value)}
-              placeholder={cardKind === "link" ? "リンクのタイトル" : "自己紹介などの文章"} />
-            {cardKind === "link" && (
-              <input className={inputCls} style={inputStyle} value={cardUrl}
-                onChange={(e) => setCardUrl(e.target.value)} placeholder="https://..." />
+              placeholder={
+                cardKind === "button"
+                  ? "リンクのタイトル"
+                  : cardKind === "picture"
+                    ? "カードのタイトル"
+                    : "見出し（任意）"
+              } />
+            {cardKind !== "button" && (
+              <textarea className={inputCls} style={inputStyle} value={cardDescription} rows={3}
+                maxLength={500}
+                onChange={(e) => setCardDescription(e.target.value)}
+                placeholder={cardKind === "picture" ? "説明（任意）" : "自己紹介などの文章"} />
             )}
+            <div>
+              {cardKind === "text" && (
+                <label className="mb-1 block text-xs font-bold">URL（任意）</label>
+              )}
+              <input className={inputCls} style={inputStyle} value={cardUrl}
+                onChange={(e) => setCardUrl(e.target.value)}
+                placeholder={cardKind === "picture" ? "リンク先URL（任意）https://..." : "https://..."} />
+            </div>
             <button
               type="button"
               disabled={busy}

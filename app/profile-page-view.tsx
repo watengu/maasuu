@@ -11,6 +11,7 @@
 // リンクカードは URL から SNS を自動判定し、アイコン行とボタンに反映する。
 import type { CSSProperties, ReactNode } from "react";
 import type { Profile, ProfileCard } from "../lib/types";
+import { normalizeCardKind } from "../lib/types";
 
 /** 背景テーマシーン（profiles.theme にキーを保存。cover_url がある場合はそちらが優先） */
 export type ProfileTheme = {
@@ -315,7 +316,7 @@ export default function ProfilePageView({
   {
     const seen = new Set<string>();
     for (const c of cards) {
-      if (c.kind !== "link" || !c.url) continue;
+      if (normalizeCardKind(c.kind) !== "button" || !c.url) continue;
       const s = detectSns(c.url);
       if (s && !seen.has(s.name)) {
         seen.add(s.name);
@@ -421,7 +422,8 @@ export default function ProfilePageView({
         {cards.length > 0 ? (
           <ul className={`${compact ? "mt-5 space-y-2.5" : "mt-7 space-y-3"}`}>
             {cards.map((c) => {
-              if (c.kind === "link" && c.url) {
+              const kind = normalizeCardKind(c.kind);
+              if (kind === "button" && c.url) {
                 const sns = detectSns(c.url);
                 const label = c.title.trim() ? c.title : (sns?.name ?? c.title);
                 const sub =
@@ -456,6 +458,135 @@ export default function ProfilePageView({
                         )}
                       </span>
                     </a>
+                  </li>
+                );
+              }
+              if (kind === "picture") {
+                const showMeta =
+                  Boolean(c.description) || Boolean(c.image_url && c.title.trim());
+                const picInner = (
+                  <>
+                    {c.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.image_url}
+                        alt=""
+                        className="aspect-[16/9] w-full object-cover"
+                      />
+                    ) : (
+                      <span
+                        className="flex aspect-[16/9] w-full items-center justify-center px-4 text-center"
+                        style={{ backgroundImage: theme.gradient }}
+                      >
+                        <span
+                          className="text-sm font-bold break-words"
+                          style={{
+                            color: theme.dark
+                              ? "#ffffff"
+                              : (LIGHT_FG[sceneKey] ?? "#46323a"),
+                            textShadow: theme.dark
+                              ? "0 1px 8px rgba(0, 0, 0, 0.35)"
+                              : undefined,
+                          }}
+                        >
+                          {c.title}
+                        </span>
+                      </span>
+                    )}
+                    {showMeta && (
+                      <span className="block px-4 py-3">
+                        {c.image_url && c.title.trim() && (
+                          <span className="block truncate text-sm font-bold">
+                            {c.title}
+                          </span>
+                        )}
+                        {c.description && (
+                          <span
+                            className="mt-0.5 block text-xs leading-relaxed break-words whitespace-pre-wrap"
+                            style={{ color: "#9a7d6d" }}
+                          >
+                            {c.description}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </>
+                );
+                const picCls =
+                  "block overflow-hidden rounded-[20px] shadow-md transition hover:opacity-95";
+                const picStyle = {
+                  background: "#fffbf3",
+                  color: "#43302a",
+                } as const;
+                return (
+                  <li key={c.id}>
+                    {c.url ? (
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={picCls}
+                        style={picStyle}
+                      >
+                        {picInner}
+                      </a>
+                    ) : (
+                      <div className={picCls} style={picStyle}>
+                        {picInner}
+                      </div>
+                    )}
+                  </li>
+                );
+              }
+              if (kind === "text") {
+                const body = c.description ? (
+                  <>
+                    {c.title.trim() && (
+                      <span className="block font-bold">{c.title}</span>
+                    )}
+                    <span
+                      className={`block break-words whitespace-pre-wrap ${c.title.trim() ? "mt-1" : ""}`}
+                    >
+                      {c.description}
+                    </span>
+                  </>
+                ) : (
+                  c.title
+                );
+                return (
+                  <li
+                    key={c.id}
+                    className="rounded-[20px] px-4 py-3.5 text-sm leading-relaxed break-words backdrop-blur-md"
+                    style={
+                      dark
+                        ? {
+                            background: "rgba(255, 246, 233, 0.18)",
+                            border: "1px solid rgba(255, 255, 255, 0.25)",
+                          }
+                        : {
+                            background: "rgba(255, 255, 255, 0.55)",
+                            border: "1px solid rgba(70, 40, 30, 0.08)",
+                          }
+                    }
+                  >
+                    {c.url ? (
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-start gap-2"
+                      >
+                        <span className="min-w-0 flex-1">{body}</span>
+                        <span
+                          aria-hidden="true"
+                          className="shrink-0 text-base leading-snug opacity-70"
+                        >
+                          ›
+                        </span>
+                      </a>
+                    ) : (
+                      body
+                    )}
                   </li>
                 );
               }

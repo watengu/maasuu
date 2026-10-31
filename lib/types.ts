@@ -22,12 +22,30 @@ export type Profile = {
   created_at: string;
 };
 
+/** リンクカードの型（migration-link-kinds.sql で 'button' / 'picture' / 'text' に拡張） */
+export type ProfileCardKind = "button" | "picture" | "text";
+
+/**
+ * DB から来た kind を正規化する。
+ * 旧値 'link' はボタン型として表示してきたものなので 'button' に読み替え、
+ * 未知値もすべて 'button' 扱いにする。
+ */
+export function normalizeCardKind(
+  raw: string | null | undefined,
+): ProfileCardKind {
+  return raw === "picture" || raw === "text" ? raw : "button";
+}
+
 export type ProfileCard = {
   id: number;
   user_id: string;
-  kind: "link" | "text";
+  kind: ProfileCardKind;
   title: string;
   url: string | null;
+  /** 画像カード型の画像URL（migration-link-kinds.sql） */
+  image_url: string | null;
+  /** 画像カード型の説明文／テキスト型の本文（migration-link-kinds.sql） */
+  description: string | null;
   sort: number;
   created_at: string;
 };
