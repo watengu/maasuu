@@ -8,6 +8,7 @@ import Link from "next/link";
 import InviteSection from "./invite-section";
 import type { Session } from "./auth-client";
 import { remainingMs } from "../lib/engine";
+import { AVATAR_CLASS } from "../lib/avatar";
 import { formatRemaining } from "../lib/format";
 import { genreLabel } from "../lib/genres";
 import type { Connection, Profile } from "../lib/types";
@@ -99,11 +100,11 @@ export default function FriendsPanel({
                     <img
                       src={partner.icon_url}
                       alt=""
-                      className="h-12 w-12 shrink-0 rounded-full object-cover"
+                      className={`${AVATAR_CLASS.list} shrink-0 rounded-full object-cover`}
                     />
                   ) : (
                     <span
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold"
+                      className={`flex ${AVATAR_CLASS.list} shrink-0 items-center justify-center rounded-full text-base font-bold`}
                       style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
                     >
                       {(partner?.display_name ?? "?").slice(0, 1)}

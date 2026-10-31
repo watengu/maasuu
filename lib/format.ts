@@ -37,3 +37,31 @@ export function formatTimeJST(iso: string): string {
   });
   return fmt.format(d);
 }
+
+/** ISO 文字列の JST 暦日キー（YYYY-MM-DD）。日付区切りの判定用 */
+export function dayKeyJST(iso: string): string {
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(iso));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** ISO 文字列を JST の「10月31日（金）」で返す（トークの日付区切り用） */
+export function formatDateDividerJST(iso: string): string {
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const weekday = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    weekday: "short",
+  }).format(d);
+  return `${get("month")}月${get("day")}日（${weekday}）`;
+}

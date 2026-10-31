@@ -385,7 +385,7 @@ function FriendsSkeleton() {
             style={{ borderColor: "var(--line)", background: "var(--surface)" }}
           >
             <span
-              className="h-12 w-12 shrink-0 rounded-full"
+              className="h-11 w-11 shrink-0 rounded-full"
               style={{ background: "var(--accent-soft)" }}
             />
             <span className="min-w-0 flex-1 space-y-2">

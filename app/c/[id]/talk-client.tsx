@@ -4,7 +4,7 @@
 // 開いたとき・送る前に遅延評価（judgeConnection）で期限判定する。
 // 表示するメッセージは expires_at > now のものだけ（24時間で見えなくなる）。
 // 行自体は残るので、往復数と1日上限のカウントは全行で行う。
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSession, type Session } from "../../auth-client";
@@ -21,7 +21,13 @@ import {
   textUnlocked,
   type RuleSet,
 } from "../../../lib/engine";
-import { formatRemaining, formatTimeJST } from "../../../lib/format";
+import {
+  dayKeyJST,
+  formatDateDividerJST,
+  formatRemaining,
+  formatTimeJST,
+} from "../../../lib/format";
+import { AVATAR_CLASS } from "../../../lib/avatar";
 import { genreLabel } from "../../../lib/genres";
 import { STAMPS, stampSrc } from "../../../lib/stamps";
 import {
@@ -313,10 +319,14 @@ export default function TalkClient() {
             </Link>
             {partner?.icon_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={partner.icon_url} alt="" className="h-9 w-9 rounded-full object-cover" />
+              <img
+                src={partner.icon_url}
+                alt=""
+                className={`${AVATAR_CLASS.talkHeader} rounded-full object-cover`}
+              />
             ) : (
               <span
-                className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold"
+                className={`flex ${AVATAR_CLASS.talkHeader} items-center justify-center rounded-full text-sm font-bold`}
                 style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
               >
                 {(partner?.display_name ?? "?").slice(0, 1)}
@@ -423,36 +433,87 @@ export default function TalkClient() {
           </p>
         )}
         <ul className="space-y-3">
-          {visibleTurns.map((t) => {
+          {visibleTurns.map((t, i) => {
             const mine = t.sender_id === session.userId;
             const src = t.kind === "stamp" ? stampSrc(t.stamp_id) : null;
+            // 日付区切り: 先頭と、JST の暦日が変わる地点に入れる（表示中メッセージのみで判定）
+            const showDateDivider =
+              i === 0 || dayKeyJST(visibleTurns[i - 1].created_at) !== dayKeyJST(t.created_at);
+            const bubble =
+              t.kind === "stamp" && src ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={src} alt="スタンプ" className="inline-block w-28" />
+              ) : (
+                <span
+                  className="inline-block whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-left text-sm leading-relaxed"
+                  style={
+                    mine
+                      ? { background: "var(--accent)", color: "#fff" }
+                      : { background: "var(--surface)", border: "1px solid var(--line)" }
+                  }
+                >
+                  {t.body}
+                </span>
+              );
             return (
-              <li key={t.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[75%] ${mine ? "text-right" : "text-left"}`}>
-                  {t.kind === "stamp" && src ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={src} alt="スタンプ" className="inline-block w-28" />
-                  ) : (
+              <Fragment key={t.id}>
+                {showDateDivider && (
+                  <li className="flex justify-center py-1">
                     <span
-                      className="inline-block whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-left text-sm leading-relaxed"
-                      style={
-                        mine
-                          ? { background: "var(--accent)", color: "#fff" }
-                          : { background: "var(--surface)", border: "1px solid var(--line)" }
-                      }
+                      className="rounded-full border px-3 py-0.5 text-[10px]"
+                      style={{
+                        borderColor: "var(--line)",
+                        background: "var(--surface)",
+                        color: "var(--muted)",
+                      }}
                     >
-                      {t.body}
+                      {formatDateDividerJST(t.created_at)}
                     </span>
-                  )}
-                  <span
-                    className="mt-0.5 block text-[10px]"
-                    style={{ color: "var(--muted)" }}
-                  >
-                    {mine && t.read_at && <span className="mr-1">既読</span>}
-                    {formatTimeJST(t.created_at)}
-                  </span>
-                </div>
-              </li>
+                  </li>
+                )}
+                {mine ? (
+                  // 自分: 吹き出しの左下横に 既読（読まれた時のみ）＋時刻を小さく縦積み
+                  <li className="flex items-end justify-end gap-1.5">
+                    <span
+                      className="flex shrink-0 flex-col items-end text-[10px] leading-tight"
+                      style={{ color: "var(--muted)" }}
+                    >
+                      {t.read_at && <span>既読</span>}
+                      <span>{formatTimeJST(t.created_at)}</span>
+                    </span>
+                    <div className="max-w-[70%]">{bubble}</div>
+                  </li>
+                ) : (
+                  // 相手: 左に円形アイコン、吹き出しの右下横に時刻を小さく表示
+                  <li className="flex items-start justify-start gap-1.5">
+                    {partner?.icon_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={partner.icon_url}
+                        alt=""
+                        className={`${AVATAR_CLASS.bubble} shrink-0 rounded-full object-cover`}
+                      />
+                    ) : (
+                      <span
+                        className={`flex ${AVATAR_CLASS.bubble} shrink-0 items-center justify-center rounded-full text-[11px] font-bold`}
+                        style={{
+                          background: "var(--accent-soft)",
+                          color: "var(--accent-strong)",
+                        }}
+                      >
+                        {(partner?.display_name ?? "?").slice(0, 1)}
+                      </span>
+                    )}
+                    <div className="max-w-[70%]">{bubble}</div>
+                    <span
+                      className="shrink-0 self-end text-[10px] leading-tight"
+                      style={{ color: "var(--muted)" }}
+                    >
+                      {formatTimeJST(t.created_at)}
+                    </span>
+                  </li>
+                )}
+              </Fragment>
             );
           })}
         </ul>
