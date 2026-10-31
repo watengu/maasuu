@@ -18,3 +18,30 @@ export function stampSrc(id: string | null): string | null {
   const s = STAMPS.find((x) => x.id === id);
   return s ? s.src : null;
 }
+
+// 入力連動サジェスト用のキーワード対応。
+// 入力した文章の意図とスタンプの意味が明確に対応するものだけを割り当てる。
+// stamp-01（相手の強い言葉への反応）・stamp-04（であるかっ）・stamp-05（キリッ）は
+// 入力文からは意図が判別できないため割り当てない。
+export const STAMP_SUGGEST_KEYWORDS: Record<string, string[]> = {
+  "stamp-02": ["やった", "できた", "すご", "成功", "うまくいった"], // やるじゃん（称賛）
+  "stamp-03": ["ウケる", "おもしろ", "笑", "わら", "爆笑"], // ぷい・ウケる
+  "stamp-06": ["断る", "むり", "無理", "いやだ", "やだ"], // だが断る
+  "stamp-07": ["おはよう", "おはよ", "おは"], // おはよう
+  "stamp-08": ["ねぇ", "ねえ", "きいて", "聞いて"], // ねぇねぇ
+  "stamp-09": ["おいしい", "おいし", "うまい", "美味しい", "ごはん"], // ウマッ
+};
+
+// 入力文にキーワードが含まれるスタンプを、従来順のまま最大 limit 件返す。
+export function suggestStamps(text: string, limit = 4): Stamp[] {
+  const t = text.trim();
+  if (!t) return [];
+  const out: Stamp[] = [];
+  for (const s of STAMPS) {
+    const words = STAMP_SUGGEST_KEYWORDS[s.id];
+    if (!words) continue;
+    if (words.some((w) => t.includes(w))) out.push(s);
+    if (out.length >= limit) break;
+  }
+  return out;
+}

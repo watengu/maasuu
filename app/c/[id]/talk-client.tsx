@@ -4,7 +4,7 @@
 // 開いたとき・送る前に遅延評価（judgeConnection）で期限判定する。
 // 表示するメッセージは expires_at > now のものだけ（24時間で見えなくなる）。
 // 行自体は残るので、往復数と1日上限のカウントは全行で行う。
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSession, type Session } from "../../auth-client";
@@ -29,7 +29,7 @@ import {
 } from "../../../lib/format";
 import { AVATAR_CLASS } from "../../../lib/avatar";
 import { genreLabel } from "../../../lib/genres";
-import { STAMPS, stampSrc } from "../../../lib/stamps";
+import { STAMPS, stampSrc, suggestStamps } from "../../../lib/stamps";
 import {
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
@@ -51,6 +51,9 @@ type Loaded = {
   turns: Turn[]; // 全行（カウント用）
 };
 
+// スタンプの使用回数（端末ローカルのみ。サーバ・DBには送らない＝私的シグナルの分離）
+const STAMP_USE_KEY = "maasuu.stampUse.v1";
+
 export default function TalkClient() {
   const params = useParams<{ id: string }>();
   const connId = params.id;
@@ -63,6 +66,8 @@ export default function TalkClient() {
   const [reportOpen, setReportOpen] = useState(false);
   // スタンプ選択欄は普段は閉じておき、ボタンで下から開く（会話を主役にする。Ao 指示 2026-10-29）
   const [stampOpen, setStampOpen] = useState(false);
+  // スタンプ使用回数（localStorage から読み込み。「よく使う順」の並び替えにだけ使う）
+  const [stampUse, setStampUse] = useState<Record<string, number>>({});
   const [, setTick] = useState(0);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -70,6 +75,33 @@ export default function TalkClient() {
     const t = setInterval(() => setTick((v) => v + 1), 30_000);
     return () => clearInterval(t);
   }, []);
+
+  // スタンプ使用回数の読み込み（端末ローカルのみ。失敗しても並びは従来順で動く）
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(STAMP_USE_KEY);
+      if (!raw) return;
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const clean: Record<string, number> = {};
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof v === "number" && v > 0) clean[k] = v;
+        }
+        setStampUse(clean);
+      }
+    } catch {
+      // 読めなければ従来順のまま
+    }
+  }, []);
+
+  // スタンプ帯の並び: 使用回数の多い順、同数は従来順。未使用だけなら従来順のまま
+  const orderedStamps = useMemo(
+    () =>
+      STAMPS.map((s, i) => ({ s, i }))
+        .sort((a, b) => (stampUse[b.s.id] ?? 0) - (stampUse[a.s.id] ?? 0) || a.i - b.i)
+        .map(({ s }) => s),
+    [stampUse],
+  );
 
   const load = useCallback(async () => {
     const session = await getSession();
@@ -193,6 +225,8 @@ export default function TalkClient() {
   const textOk = canSendText(conn, now);
   const myOk = conn.user_a === session.userId ? conn.text_ok_a : conn.text_ok_b;
   const partnerOk = conn.user_a === session.userId ? conn.text_ok_b : conn.text_ok_a;
+  // 入力連動サジェスト: テキスト入力がある時だけ、入力文に合うスタンプを候補に出す
+  const stampSuggestions = textOk ? suggestStamps(text) : [];
 
   // Web Push: 送信できたら相手へ通知を投げる（fire-and-forget。失敗しても送信フローは止めない）
   const notifyPush = async () => {
@@ -246,6 +280,18 @@ export default function TalkClient() {
         stamp_id: stampId ?? null,
         body: body ?? null,
       });
+      // スタンプ送信が成功したら端末ローカルの使用回数を増やす（並び替え専用・外部送信なし）
+      if (kind === "stamp" && stampId) {
+        setStampUse((prev) => {
+          const next = { ...prev, [stampId]: (prev[stampId] ?? 0) + 1 };
+          try {
+            window.localStorage.setItem(STAMP_USE_KEY, JSON.stringify(next));
+          } catch {
+            // 保存できなくても送信フローは止めない
+          }
+          return next;
+        });
+      }
       void notifyPush();
       setText("");
       await load();
@@ -568,6 +614,30 @@ export default function TalkClient() {
                 </div>
               </div>
             ) : null}
+            {stampSuggestions.length > 0 && (
+              <div className="mb-2 flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <span
+                  className="shrink-0 text-[10px] font-bold"
+                  style={{ color: "var(--muted)" }}
+                >
+                  候補
+                </span>
+                {stampSuggestions.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={busy || remainToday <= 0}
+                    onClick={() => send("stamp", s.id)}
+                    aria-label={`スタンプ候補：${s.label}`}
+                    className="h-12 w-12 shrink-0 rounded-lg p-1 disabled:opacity-40"
+                    style={{ background: "var(--surface)", border: "1px solid var(--line)" }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={s.src} alt={s.label} className="h-full w-full object-contain" />
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex items-start gap-2">
               <button
                 type="button"
@@ -623,7 +693,7 @@ export default function TalkClient() {
             </div>
             {stampOpen && (
               <div className="mt-3 grid auto-cols-[84px] grid-flow-col grid-rows-2 gap-2 overflow-x-auto pb-1 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent_100%)] [scrollbar-width:none] snap-x [&::-webkit-scrollbar]:hidden">
-                {STAMPS.map((s) => (
+                {orderedStamps.map((s) => (
                   <button
                     key={s.id}
                     type="button"
