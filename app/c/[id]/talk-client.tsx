@@ -55,6 +55,27 @@ type Loaded = {
 // スタンプの使用回数（端末ローカルのみ。サーバ・DBには送らない＝私的シグナルの分離）
 const STAMP_USE_KEY = "maasuu.stampUse.v1";
 
+// ホーム画面追加の案内を閉じたかどうか（端末ローカルのみ）
+const INSTALL_GUIDE_KEY = "maasuu.installGuide.dismissed";
+
+/** ホーム画面から起動しているか（standalone 表示か）。push-section.tsx と同じ判定 */
+function isStandaloneDisplay(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia?.("(display-mode: standalone)").matches) return true;
+  return (
+    (navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
+
+/** iPhone / iPad 系か（追加手順の文言を出し分けるため。push-section.tsx と同じ判定） */
+function isIosLikeDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (/iphone|ipad|ipod/i.test(ua)) return true;
+  // iPadOS は Macintosh を名乗ることがあるためタッチ対応で補う
+  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
 export default function TalkClient() {
   const params = useParams<{ id: string }>();
   const connId = params.id;
@@ -69,6 +90,8 @@ export default function TalkClient() {
   const [stampOpen, setStampOpen] = useState(false);
   // スタンプ使用回数（localStorage から読み込み。「よく使う順」の並び替えにだけ使う）
   const [stampUse, setStampUse] = useState<Record<string, number>>({});
+  // ホーム画面追加の案内バナー。null = 出さない、{ ios } = 手順の出し分けつきで表示
+  const [installGuide, setInstallGuide] = useState<{ ios: boolean } | null>(null);
   const [, setTick] = useState(0);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -94,6 +117,28 @@ export default function TalkClient() {
       // 読めなければ従来順のまま
     }
   }, []);
+
+  // ホーム画面追加の案内: standalone 起動（追加済み）なら二度と出さない。
+  // 閉じた端末にも出さない（localStorage で端末単位に記録）。
+  useEffect(() => {
+    if (isStandaloneDisplay()) return;
+    try {
+      if (window.localStorage.getItem(INSTALL_GUIDE_KEY)) return;
+    } catch {
+      // 読めなくても案内自体は出す
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInstallGuide({ ios: isIosLikeDevice() });
+  }, []);
+
+  const dismissInstallGuide = () => {
+    setInstallGuide(null);
+    try {
+      window.localStorage.setItem(INSTALL_GUIDE_KEY, "1");
+    } catch {
+      // 保存できなくても閉じる動作はする
+    }
+  };
 
   // スタンプ帯の並び: 使用回数の多い順、同数は従来順。未使用だけなら従来順のまま
   const orderedStamps = useMemo(
@@ -475,6 +520,35 @@ export default function TalkClient() {
           </div>
         )}
       </header>
+
+      {installGuide && !finished && (
+        <div
+          className="border-b"
+          style={{ background: "var(--accent-soft)", borderColor: "var(--line)" }}
+        >
+          <div className="mx-auto flex w-full max-w-md items-start gap-2 px-4 py-2.5">
+            <p
+              className="min-w-0 flex-1 text-[11px] leading-relaxed"
+              style={{ color: "var(--accent-strong)" }}
+            >
+              ホーム画面に追加すると、期限が近づいたときにお知らせできます。
+              {installGuide.ios
+                ? "共有ボタン → 「ホーム画面に追加」で追加できます。"
+                : "メニューの「ホーム画面に追加」／「アプリをインストール」から追加できます。"}
+              追加したら、設定で通知をオンにしてください。
+            </p>
+            <button
+              type="button"
+              onClick={dismissInstallGuide}
+              aria-label="案内を閉じる"
+              className="shrink-0 px-1 text-sm leading-none"
+              style={{ color: "var(--accent-strong)" }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto px-4 py-4">
         {(conn.genre || introducer) && (
