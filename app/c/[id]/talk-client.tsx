@@ -28,6 +28,7 @@ import {
   formatTimeJST,
 } from "../../../lib/format";
 import { AVATAR_CLASS } from "../../../lib/avatar";
+import HourglassIcon, { DEADLINE_WARN_COLOR } from "../../hourglass-icon";
 import { genreLabel } from "../../../lib/genres";
 import { STAMPS, stampSrc, suggestStamps } from "../../../lib/stamps";
 import {
@@ -219,6 +220,14 @@ export default function TalkClient() {
   const finished = gone || ended;
   const visibleTurns = turns.filter((t) => new Date(t.expires_at).getTime() > now.getTime());
   const { roundTrips } = roundTripsInCurrentWindow(conn, turns, rules);
+  const remainMs = remainingMs(conn, now);
+  // 期限接近の警告: 残り24時間未満 かつ 必要往復が未達のときだけ出す。
+  // 往復を満たした接続は期限で延長される（延長確定）ので警告しない。
+  const deadlineWarn =
+    !finished &&
+    remainMs > 0 &&
+    remainMs < 24 * 3_600_000 &&
+    roundTrips < rules.quotaRoundTrips;
   const remainToday = remainingTurnsToday(turns, session.userId, rules, now);
   const dayOne = isDayOne(conn, now);
   const unlocked = textUnlocked(conn);
@@ -408,8 +417,31 @@ export default function TalkClient() {
               ? "この繋がりは終了しました"
               : gone
                 ? "この繋がりは終わりました"
-                : `${formatRemaining(remainingMs(conn, now))} ・ 往復 ${roundTrips}/${rules.quotaRoundTrips} ・ 今日あと${remainToday}ターン`}
+                : deadlineWarn
+                  ? (
+                      <>
+                        <span
+                          className="inline-flex items-center gap-1 font-bold"
+                          style={{ color: DEADLINE_WARN_COLOR }}
+                        >
+                          <HourglassIcon />
+                          {formatRemaining(remainMs)}
+                        </span>
+                        {` ・ 往復 ${roundTrips}/${rules.quotaRoundTrips} ・ 今日あと${remainToday}ターン`}
+                      </>
+                    )
+                  : `${formatRemaining(remainMs)} ・ 往復 ${roundTrips}/${rules.quotaRoundTrips} ・ 今日あと${remainToday}ターン`}
           </p>
+          {finished && (
+            <p
+              className="mt-1 text-[11px] leading-relaxed"
+              style={{ color: "var(--muted)" }}
+            >
+              {gone
+                ? "期限までに往復が足りず終了しました。同じ相手とは再接続できません。"
+                : "同じ相手とは再接続できません。"}
+            </p>
+          )}
         </div>
         {reportOpen && partner && (
           <div

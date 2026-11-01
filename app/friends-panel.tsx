@@ -9,6 +9,7 @@ import InviteSection from "./invite-section";
 import type { Session } from "./auth-client";
 import { remainingMs } from "../lib/engine";
 import { AVATAR_CLASS } from "../lib/avatar";
+import HourglassIcon, { DEADLINE_WARN_COLOR } from "./hourglass-icon";
 import { formatRemaining } from "../lib/format";
 import { genreLabel } from "../lib/genres";
 import type { Connection, Profile } from "../lib/types";
@@ -17,6 +18,8 @@ export type ConnView = {
   conn: Connection;
   partner: Profile | null;
   introducer: Profile | null;
+  /** 現在の窓で必要往復を満たしているか（シェル側で判定。期限警告の抑制に使う） */
+  quotaMet?: boolean;
 };
 
 export default function FriendsPanel({
@@ -81,9 +84,20 @@ export default function FriendsPanel({
         </div>
       ) : (
         <ul className="mt-3 space-y-3">
-          {sorted.map(({ conn, partner, introducer }) => {
+          {sorted.map(({ conn, partner, introducer, quotaMet }) => {
             // 終了表示は gone（期限切れ）と ended（繋がりを切った）で共通にする
             const gone = conn.state !== "active";
+            const remainMs = remainingMs(conn, now);
+            // 期限接近の警告: 残り24時間未満 かつ 必要往復が未達のときだけ出す。
+            // 往復を満たした接続は期限で延長される（延長確定）ので警告しない。
+            const warn =
+              !gone && remainMs > 0 && remainMs < 24 * 3_600_000 && quotaMet === false;
+            // 紹介ラベルはブリッジ接続（紹介者が第三者）のときだけ出す。
+            // ダイレクト接続では紹介者＝当事者の一方なので出さない。
+            const isBridge =
+              !!conn.introducer_id &&
+              conn.introducer_id !== conn.user_a &&
+              conn.introducer_id !== conn.user_b;
             return (
               <li key={conn.id}>
                 <Link
@@ -120,7 +134,7 @@ export default function FriendsPanel({
                     >
                       {partner?.status_line || " "}
                     </span>
-                    {(conn.genre || introducer) && (
+                    {(conn.genre || (introducer && isBridge)) && (
                       <span
                         className="mt-0.5 block truncate text-[11px]"
                         style={{ color: "var(--muted)" }}
@@ -136,15 +150,34 @@ export default function FriendsPanel({
                             {genreLabel(conn.genre)}
                           </span>
                         )}
-                        {introducer && `${introducer.display_name} さんの紹介`}
+                        {introducer &&
+                          isBridge &&
+                          `${introducer.display_name} さんの紹介`}
+                      </span>
+                    )}
+                    {gone && (
+                      <span
+                        className="mt-1 block text-[11px] leading-snug"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        {conn.state === "gone"
+                          ? "期限までに往復が足りず終了しました。同じ相手とは再接続できません。"
+                          : "この繋がりは終了しました。同じ相手とは再接続できません。"}
                       </span>
                     )}
                   </span>
                   <span
-                    className="shrink-0 text-xs font-bold"
-                    style={{ color: gone ? "var(--muted)" : "var(--accent-strong)" }}
+                    className="flex shrink-0 items-center gap-1 text-xs font-bold"
+                    style={{
+                      color: gone
+                        ? "var(--muted)"
+                        : warn
+                          ? DEADLINE_WARN_COLOR
+                          : "var(--accent-strong)",
+                    }}
                   >
-                    {gone ? "終了" : formatRemaining(remainingMs(conn, now))}
+                    {warn && <HourglassIcon />}
+                    {gone ? "終了" : formatRemaining(remainMs)}
                   </span>
                 </Link>
               </li>

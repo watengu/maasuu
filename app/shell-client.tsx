@@ -21,7 +21,12 @@ import BannedScreen from "./banned-screen";
 import ProfileCreateForm from "./profile-create-form";
 import FriendsPanel, { type ConnView } from "./friends-panel";
 import HomePanel from "./home-panel";
-import { judgeConnection, rulesFor, type TurnCount } from "../lib/engine";
+import {
+  judgeConnection,
+  roundTripsInCurrentWindow,
+  rulesFor,
+  type TurnCount,
+} from "../lib/engine";
 import { rpc, selectOne, selectRows, updateRows } from "../lib/supabase";
 import type { Connection, Profile, ProfileCard } from "../lib/types";
 
@@ -134,6 +139,9 @@ export default function ShellClient() {
             ? (profileById.get(c.introducer_id) ?? null)
             : null;
           let conn = c;
+          // 現在の窓で必要往復を満たしているか（リストの期限警告の抑制に使う）。
+          // 終了済みの接続では警告を出さないので true 扱いにしておく。
+          let quotaMet = true;
           if (c.state === "active") {
             const turns = await selectRows<TurnCount>(
               `turns?connection_id=eq.${c.id}&select=sender_id,created_at`,
@@ -147,8 +155,13 @@ export default function ShellClient() {
                 state: conn.state,
               }).catch(() => undefined);
             }
+            if (conn.state === "active") {
+              quotaMet =
+                roundTripsInCurrentWindow(conn, turns, rules).roundTrips >=
+                rules.quotaRoundTrips;
+            }
           }
-          built.push({ conn, partner, introducer });
+          built.push({ conn, partner, introducer, quotaMet });
         }
         if (cancelled) return;
         setViews(built);
