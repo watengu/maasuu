@@ -531,7 +531,8 @@ export default function TalkClient() {
               className="min-w-0 flex-1 text-[11px] leading-relaxed"
               style={{ color: "var(--accent-strong)" }}
             >
-              ホーム画面に追加すると、期限が近づいたときにお知らせできます。
+              ホーム画面に追加すると、期限が近づいたときにお知らせが届きます。
+              ログインも消えにくくなります（ブラウザのままだと、しばらく使わないとログイン情報が消えることがあります）。
               {installGuide.ios
                 ? "共有ボタン → 「ホーム画面に追加」で追加できます。"
                 : "メニューの「ホーム画面に追加」／「アプリをインストール」から追加できます。"}

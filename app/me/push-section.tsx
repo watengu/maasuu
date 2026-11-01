@@ -189,6 +189,7 @@ export default function PushSection({ session }: { session: Session }) {
       <h2 className="text-sm font-bold">通知</h2>
       <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
         繋がっている相手からメッセージが届いたときに、この端末へ通知します。
+        ホーム画面に追加すると、アイコンに要対応の数字（バッジ）が出ます。
       </p>
       {note && (
         <p

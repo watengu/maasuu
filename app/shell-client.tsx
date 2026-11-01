@@ -23,10 +23,12 @@ import FriendsPanel, { type ConnView } from "./friends-panel";
 import HomePanel from "./home-panel";
 import {
   judgeConnection,
+  remainingMs,
   roundTripsInCurrentWindow,
   rulesFor,
   type TurnCount,
 } from "../lib/engine";
+import { updateAppBadge } from "../lib/badge";
 import { rpc, selectOne, selectRows, updateRows } from "../lib/supabase";
 import type { Connection, Profile, ProfileCard } from "../lib/types";
 
@@ -45,6 +47,10 @@ type Phase =
 
 // 下部タブバーのラベル（タップ切替が主、スワイプは補助。Ao 決定 2026-10-29）
 const TAB_LABELS = ["つながり", "ホーム"] as const;
+
+// judge 用に取得するターンの形。engine の判定は sender_id / created_at だけを見るが、
+// バッジの未読判定（read_at が null かつ表示期限内）にも同じ取得を使い回す。
+type TurnJudge = TurnCount & { read_at: string | null; expires_at: string };
 
 export default function ShellClient() {
   const [phase, setPhase] = useState<Phase>({ kind: "splash" });
@@ -131,6 +137,8 @@ export default function ShellClient() {
             : [];
         const profileById = new Map(related.map((p) => [p.id, p]));
         const built: ConnView[] = [];
+        // アイコンバッジに出す「対応が要る繋がり」の数（接続単位で最大1）
+        let badgeCount = 0;
         for (const c of conns) {
           const partner = profileById.get(
             c.user_a === session.userId ? c.user_b : c.user_a,
@@ -143,8 +151,8 @@ export default function ShellClient() {
           // 終了済みの接続では警告を出さないので true 扱いにしておく。
           let quotaMet = true;
           if (c.state === "active") {
-            const turns = await selectRows<TurnCount>(
-              `turns?connection_id=eq.${c.id}&select=sender_id,created_at`,
+            const turns = await selectRows<TurnJudge>(
+              `turns?connection_id=eq.${c.id}&select=sender_id,created_at,read_at,expires_at`,
             );
             const rules = rulesFor(me.gender, partner?.gender);
             const judged = judgeConnection(c, turns, rules);
@@ -159,12 +167,28 @@ export default function ShellClient() {
               quotaMet =
                 roundTripsInCurrentWindow(conn, turns, rules).roundTrips >=
                 rules.quotaRoundTrips;
+              // バッジ判定（接続単位で最大1）: 未読があるか、期限リスクがあるか。
+              // 未読 = 相手のターンで未既読かつ表示期限（24時間）内のものが1件以上。
+              // 期限リスク = 一覧の警告条件と同じ（残り24時間未満 かつ 往復ノルマ未達）。
+              const nowMs = Date.now();
+              const hasUnread = turns.some(
+                (t) =>
+                  t.sender_id !== session.userId &&
+                  !t.read_at &&
+                  new Date(t.expires_at).getTime() > nowMs,
+              );
+              const remain = remainingMs(conn, new Date(nowMs));
+              const deadlineRisk =
+                remain > 0 && remain < 24 * 3_600_000 && !quotaMet;
+              if (hasUnread || deadlineRisk) badgeCount += 1;
             }
           }
           built.push({ conn, partner, introducer, quotaMet });
         }
         if (cancelled) return;
         setViews(built);
+        // ホーム画面アイコンのバッジを最新の要対応数に合わせる（未対応環境では no-op）
+        updateAppBadge(badgeCount);
       } catch (e) {
         console.error(e);
         if (!cancelled) setPhase({ kind: "loggedOut" });
