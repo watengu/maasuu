@@ -150,6 +150,9 @@ export default function ShellClient() {
           // 現在の窓で必要往復を満たしているか（リストの期限警告の抑制に使う）。
           // 終了済みの接続では警告を出さないので true 扱いにしておく。
           let quotaMet = true;
+          // 進捗行（あと◯回で◯往復）表示用の実数。active のときだけ入れる。
+          let roundTrips: number | undefined;
+          let quotaRoundTrips: number | undefined;
           if (c.state === "active") {
             const turns = await selectRows<TurnJudge>(
               `turns?connection_id=eq.${c.id}&select=sender_id,created_at,read_at,expires_at`,
@@ -164,9 +167,9 @@ export default function ShellClient() {
               }).catch(() => undefined);
             }
             if (conn.state === "active") {
-              quotaMet =
-                roundTripsInCurrentWindow(conn, turns, rules).roundTrips >=
-                rules.quotaRoundTrips;
+              roundTrips = roundTripsInCurrentWindow(conn, turns, rules).roundTrips;
+              quotaRoundTrips = rules.quotaRoundTrips;
+              quotaMet = roundTrips >= rules.quotaRoundTrips;
               // バッジ判定（接続単位で最大1）: 未読があるか、期限リスクがあるか。
               // 未読 = 相手のターンで未既読かつ表示期限（24時間）内のものが1件以上。
               // 期限リスク = 一覧の警告条件と同じ（残り24時間未満 かつ 往復ノルマ未達）。
@@ -183,7 +186,7 @@ export default function ShellClient() {
               if (hasUnread || deadlineRisk) badgeCount += 1;
             }
           }
-          built.push({ conn, partner, introducer, quotaMet });
+          built.push({ conn, partner, introducer, quotaMet, roundTrips, quotaRoundTrips });
         }
         if (cancelled) return;
         setViews(built);

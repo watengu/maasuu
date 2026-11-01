@@ -7,7 +7,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import InviteSection from "./invite-section";
 import type { Session } from "./auth-client";
-import { remainingMs } from "../lib/engine";
+import {
+  isDayOne,
+  remainingMs,
+  textUnlockRemainingMs,
+  textUnlocked,
+} from "../lib/engine";
 import { AVATAR_CLASS } from "../lib/avatar";
 import HourglassIcon, { DEADLINE_WARN_COLOR } from "./hourglass-icon";
 import { formatRemaining } from "../lib/format";
@@ -20,6 +25,9 @@ export type ConnView = {
   introducer: Profile | null;
   /** 現在の窓で必要往復を満たしているか（シェル側で判定。期限警告の抑制に使う） */
   quotaMet?: boolean;
+  /** 現在の窓の往復数と必要数（シェル側で判定。進捗行の表示に使う。active のときだけ入る） */
+  roundTrips?: number;
+  quotaRoundTrips?: number;
 };
 
 export default function FriendsPanel({
@@ -84,10 +92,36 @@ export default function FriendsPanel({
         </div>
       ) : (
         <ul className="mt-3 space-y-3">
-          {sorted.map(({ conn, partner, introducer, quotaMet }) => {
+          {sorted.map(
+            ({ conn, partner, introducer, quotaMet, roundTrips, quotaRoundTrips }) => {
             // 終了表示は gone（期限切れ）と ended（繋がりを切った）で共通にする
             const gone = conn.state !== "active";
             const remainMs = remainingMs(conn, now);
+            // 進捗行（途中経過の見える化）: 往復の残り＋テキスト解禁までの道のりを1行にまとめる。
+            // 終了・切断した接続には出さない。期限の残りは右側に既にあるのでここには入れない。
+            const progressParts: string[] = [];
+            if (!gone) {
+              if (
+                roundTrips !== undefined &&
+                quotaRoundTrips !== undefined
+              ) {
+                progressParts.push(
+                  roundTrips < quotaRoundTrips
+                    ? `あと${quotaRoundTrips - roundTrips}回で${quotaRoundTrips}往復`
+                    : `${quotaRoundTrips}往復達成`,
+                );
+              }
+              if (isDayOne(conn, now)) {
+                // 解禁の時刻条件（開始+24時間）までの残り。許可の状態は問わない
+                // （時間と許可の両方がそろって解禁。許可の進み具合はトーク側のバーで見る）
+                progressParts.push(
+                  `テキスト解禁まで ${formatRemaining(textUnlockRemainingMs(conn, now))}`,
+                );
+              } else if (!textUnlocked(conn)) {
+                // 24時間は過ぎたので、次の一手は許可だと分かる言い方にする
+                progressParts.push("あとはお互いの許可でテキスト解禁");
+              }
+            }
             // 期限接近の警告: 残り24時間未満 かつ 必要往復が未達のときだけ出す。
             // 往復を満たした接続は期限で延長される（延長確定）ので警告しない。
             const warn =
@@ -153,6 +187,14 @@ export default function FriendsPanel({
                         {introducer &&
                           isBridge &&
                           `${introducer.display_name} さんの紹介`}
+                      </span>
+                    )}
+                    {!gone && progressParts.length > 0 && (
+                      <span
+                        className="mt-0.5 block truncate text-[11px]"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        {progressParts.join(" ・ ")}
                       </span>
                     )}
                     {gone && (

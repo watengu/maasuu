@@ -18,6 +18,7 @@ import {
   remainingTurnsToday,
   roundTripsInCurrentWindow,
   rulesFor,
+  textUnlockRemainingMs,
   textUnlocked,
   type RuleSet,
 } from "../../../lib/engine";
@@ -702,7 +703,7 @@ export default function TalkClient() {
               >
                 <p className="text-[11px] leading-snug" style={{ color: "var(--muted)" }}>
                   {dayOne
-                    ? "初日はスタンプのみ。テキストは明日以降、双方の許可がそろうと使えます。"
+                    ? `初日はスタンプのみ。テキスト解禁まで ${formatRemaining(textUnlockRemainingMs(conn, now))}です。`
                     : "テキストは双方の許可がそろうと使えます。"}
                 </p>
                 <div className="mt-1.5 flex items-center justify-between gap-2">
@@ -791,7 +792,7 @@ export default function TalkClient() {
               ) : (
                 <p className="flex-1 pt-2 text-center text-[11px]" style={{ color: "var(--muted)" }}>
                   {unlocked && dayOne
-                    ? "テキストは明日から使えます"
+                    ? `テキスト解禁まで ${formatRemaining(textUnlockRemainingMs(conn, now))}`
                     : unlocked
                       ? ""
                       : "テキストは双方の許可がそろうと使えます"}

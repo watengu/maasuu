@@ -138,6 +138,14 @@ export function textUnlocked(conn: Connection): boolean {
   return conn.text_ok_a && conn.text_ok_b;
 }
 
+/**
+ * テキスト解禁の時刻条件（接続開始 + 24時間）まであと何 ms か。
+ * canSendText / isDayOne と同じ時刻条件。過ぎていれば 0 以下。
+ */
+export function textUnlockRemainingMs(conn: Connection, now: Date = new Date()): number {
+  return new Date(conn.started_at).getTime() + DAY_MS - now.getTime();
+}
+
 /** テキストを送れる状態か（解禁済み かつ 初日を過ぎている） */
 export function canSendText(conn: Connection, now: Date = new Date()): boolean {
   return conn.state === "active" && textUnlocked(conn) && !isDayOne(conn, now);
