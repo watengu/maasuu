@@ -161,6 +161,13 @@ export default function LandingScreen() {
             <span className="text-[11px] font-bold tracking-[0.5em]">MAASUU</span>
             <span className="h-px w-10 bg-current" aria-hidden="true" />
           </div>
+          {/* カテゴリ一文: 3秒で何のアプリか分かるように、マストヘッド直下に置く */}
+          <p
+            className="mt-4 text-center text-[13px] font-bold leading-relaxed tracking-wider"
+            style={{ textShadow: "0 2px 10px rgba(96, 42, 8, 0.4)" }}
+          >
+            紹介でつながる、24時間で消えるメッセージのSNS
+          </p>
         </div>
 
         {/* メインビジュアル（表紙写真） */}
@@ -225,6 +232,20 @@ export default function LandingScreen() {
             検索はありません。入口は紹介だけ
           </p>
         </div>
+
+        {/* 表紙直下のCTA: 中面まで読まなくても始められるように、入口にも置く */}
+        <button
+          type="button"
+          onClick={signInWithGoogle}
+          className="mt-8 w-full rounded-full py-4 text-base font-black tracking-wide shadow-xl"
+          style={{
+            background: "#fffbf3",
+            color: "#43302a",
+            boxShadow: "0 16px 32px rgba(64, 30, 6, 0.3)",
+          }}
+        >
+          Googleではじめる
+        </button>
 
         {/* ===== 中面 ===== */}
         <div
@@ -305,7 +326,7 @@ export default function LandingScreen() {
           Googleでログイン
         </button>
         <p className="mt-3 text-center text-xs leading-relaxed opacity-90">
-          参加には紹介リンクが必要です。
+          マァスゥは紹介制です。招待リンクは、参加している知人から届きます。
           <br />
           リンクをお持ちの方は、そのリンクからお入りください。
         </p>
