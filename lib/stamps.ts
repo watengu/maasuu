@@ -7,8 +7,8 @@ export type Stamp = { id: string; src: string; label: string };
 // 会話継続: うんうん/ねぇねぇ/なにしてる？/なに？/どう？/話そう/大丈夫？/ごめん
 // 感情・状況: ぷい・ウケる/であるかっ/キリッ/だが断る/ウマッ/むりむり/今は話せない/
 //   ここまで/やめて/強い言葉はつかわないで/やるじゃん/かわいい/うれしい/おやすみ/またね
-// ※ stamp-24（かなしい）は生成側の都合で未制作のため未収録（制作でき次第、
-//   感情・状況の「うれしい」の後ろに差し込む）。
+// ※ stamp-24（かなしい）は 2026-11-03 に制作完了し、感情・状況の「うれしい」の
+//   後ろに収録した。
 export const STAMPS: Stamp[] = [
   { id: "stamp-19", src: "/stamps/stamp-19.png", label: "了解です" },
   { id: "stamp-12", src: "/stamps/stamp-12.png", label: "わかった" },
@@ -39,6 +39,7 @@ export const STAMPS: Stamp[] = [
   { id: "stamp-02", src: "/stamps/stamp-02.png", label: "やるじゃん" },
   { id: "stamp-15", src: "/stamps/stamp-15.png", label: "かわいい" },
   { id: "stamp-23", src: "/stamps/stamp-23.png", label: "うれしい" },
+  { id: "stamp-24", src: "/stamps/stamp-24.png", label: "かなしい" },
   { id: "stamp-17", src: "/stamps/stamp-17.png", label: "おやすみ" },
   { id: "stamp-32", src: "/stamps/stamp-32.png", label: "またね" },
 ];
@@ -67,6 +68,7 @@ export const STAMP_SUGGEST_KEYWORDS: Record<string, string[]> = {
   "stamp-18": ["はじめまして"], // はじめまして
   "stamp-19": ["りょうかい"], // 了解です
   "stamp-21": ["いいね"], // いいね
+  "stamp-24": ["かなしい", "悲しい"], // かなしい
 };
 
 // 入力文にキーワードが含まれるスタンプを、STAMPS の基礎順のまま最大 limit 件返す。
