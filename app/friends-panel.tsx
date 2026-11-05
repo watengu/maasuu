@@ -18,6 +18,7 @@ import HourglassIcon, { DEADLINE_WARN_COLOR } from "./hourglass-icon";
 import { formatRemaining } from "../lib/format";
 import { genreLabel } from "../lib/genres";
 import type { Connection, Profile } from "../lib/types";
+import { hideConnection, loadHidden } from "../lib/hidden";
 
 export type ConnView = {
   conn: Connection;
@@ -42,6 +43,11 @@ export default function FriendsPanel({
   pendingPath: string | null;
 }) {
   const [, setTick] = useState(0);
+  // 「一覧から消す」（端末内のみ。相手の画面には影響しない）
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+  useEffect(() => {
+    setHiddenIds(loadHidden(me.id).connections);
+  }, [me.id]);
 
   // 残り時間表示を定期的に進める
   useEffect(() => {
@@ -50,7 +56,8 @@ export default function FriendsPanel({
   }, []);
 
   const now = new Date();
-  const sorted = [...views].sort((x, y) => {
+  const visibleViews = views.filter((v) => !hiddenIds.includes(v.conn.id));
+  const sorted = [...visibleViews].sort((x, y) => {
     if (x.conn.state !== y.conn.state) return x.conn.state === "active" ? -1 : 1;
     return (
       new Date(x.conn.deadline).getTime() - new Date(y.conn.deadline).getTime()
@@ -222,6 +229,20 @@ export default function FriendsPanel({
                     {gone ? "終了" : formatRemaining(remainMs)}
                   </span>
                 </Link>
+                {gone && (
+                  <div className="mt-1 pr-1 text-right">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHiddenIds(hideConnection(me.id, conn.id).connections);
+                      }}
+                      className="text-[11px] underline underline-offset-2"
+                      style={{ color: "var(--muted)" }}
+                    >
+                      一覧から消す
+                    </button>
+                  </div>
+                )}
               </li>
             );
           })}

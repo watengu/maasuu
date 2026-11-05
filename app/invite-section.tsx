@@ -15,6 +15,7 @@ import {
 import { formatDateTimeJST, formatRemaining } from "../lib/format";
 import { GENRE_OPTIONS, genreLabel } from "../lib/genres";
 import { insertRow, rpc, selectRows } from "../lib/supabase";
+import { hideInvite, loadHidden } from "../lib/hidden";
 import type { Connection, Genre, IntroSet, Profile } from "../lib/types";
 
 export default function InviteSection({
@@ -34,6 +35,11 @@ export default function InviteSection({
   const [busy, setBusy] = useState(false);
   // 失効判定用の現在時刻（取得のたびに更新する。描画中に Date.now() を呼ばないため）
   const [nowMs, setNowMs] = useState(0);
+  // 「一覧から消す」（端末内のみ）
+  const [hiddenInvites, setHiddenInvites] = useState<string[]>([]);
+  useEffect(() => {
+    setHiddenInvites(loadHidden(session.userId).invites);
+  }, [session.userId]);
   // 繋がり成立済みの行は折りたたむ（詳細はボタンで開く。Ao 指示 2026-10-29）
   const [expandedDone, setExpandedDone] = useState<Set<string>>(new Set());
   const toggleDone = (id: string) =>
@@ -178,7 +184,7 @@ export default function InviteSection({
       : `待機中（${joinedNames.get(joinedBy) ?? "参加者"} さん参加済み）`;
   };
 
-  const directSets = sets.filter((st) => st.direct);
+  const directSets = sets.filter((st) => st.direct && !hiddenInvites.includes(st.id));
 
   return (
     <section
@@ -275,6 +281,7 @@ export default function InviteSection({
           {directSets.map((st) => {
             const both = Boolean(st.joined_by_a && st.joined_by_b);
             const collapsed = both && !expandedDone.has(st.id);
+            const vrTop = setVoidReason(st);
             return (
               <li
                 key={st.id}
@@ -348,6 +355,7 @@ export default function InviteSection({
                     </div>
                   );
                 })()}
+                {!vrTop && (
                 <div className="mt-2">
                   <p className="text-[11px] font-bold">
                     招待リンク ・ {urlStatus(st, st.joined_by_b)}
@@ -355,6 +363,8 @@ export default function InviteSection({
                   <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
                   <LinkActions url={`${origin}/i/${st.code_b}`} />
                 </div>
+                )}
+                <div className="mt-3 flex items-center gap-4">
                 {!both && !st.voided_at && (
                   <button
                     type="button"
@@ -370,6 +380,17 @@ export default function InviteSection({
                     この招待を取り消す
                   </button>
                 )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHiddenInvites(hideInvite(session.userId, st.id).invites);
+                    }}
+                    className="text-xs underline underline-offset-2"
+                    style={{ color: "var(--muted)" }}
+                  >
+                    一覧から消す
+                  </button>
+                </div>
                   </>
                 )}
               </li>

@@ -6,7 +6,7 @@
 // 行自体は残るので、往復数と1日上限のカウントは全行で行う。
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { getSession, type Session } from "../../auth-client";
 import BannedScreen from "../../banned-screen";
 import {
@@ -31,6 +31,7 @@ import {
 import { AVATAR_CLASS } from "../../../lib/avatar";
 import HourglassIcon, { DEADLINE_WARN_COLOR } from "../../hourglass-icon";
 import { genreLabel } from "../../../lib/genres";
+import { hideConnection } from "../../../lib/hidden";
 import { STAMPS, stampSrc, suggestStamps } from "../../../lib/stamps";
 import {
   SUPABASE_ANON_KEY,
@@ -79,6 +80,7 @@ function isIosLikeDevice(): boolean {
 
 export default function TalkClient() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const connId = params.id;
   const [data, setData] = useState<Loaded | null>(null);
   const [phase, setPhase] = useState<"loading" | "error" | "banned" | "ready">("loading");
@@ -685,6 +687,46 @@ export default function TalkClient() {
         )}
         <div ref={bottomRef} />
       </main>
+
+      {finished && (
+        <section
+          className="border-t"
+          style={{
+            background: "var(--surface)",
+            borderColor: "var(--line)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+          }}
+        >
+          <div className="mx-auto w-full max-w-md px-4 py-4">
+            <p className="text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+              {formatDateDividerJST(conn.started_at)}に始まった繋がりです。やり取りは {turns.length} 件ありました。
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--muted)" }}>
+              新しい繋がりは紹介から生まれます。一覧の下の「紹介する」から招待を作れます。
+            </p>
+            <div className="mt-3 flex items-center gap-4">
+              <Link
+                href="/"
+                className="rounded-full border px-4 py-2 text-xs font-bold"
+                style={{ borderColor: "var(--accent)", color: "var(--accent-strong)" }}
+              >
+                つながり一覧へ戻る
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  hideConnection(session.userId, conn.id);
+                  router.push("/");
+                }}
+                className="text-xs underline underline-offset-2"
+                style={{ color: "var(--muted)" }}
+              >
+                この繋がりを一覧から消す
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {!finished && (
         <footer
