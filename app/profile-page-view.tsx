@@ -376,7 +376,6 @@ export default function ProfilePageView({
   className,
   mood = null,
   showMoodPrompt = false,
-  atmosphereStrip = null,
 }: {
   profile: Profile;
   cards: ProfileCard[];
@@ -401,13 +400,6 @@ export default function ProfilePageView({
    * 気分枠の位置に「今日の気分は？」と設定への静かな誘導を出す。
    */
   showMoodPrompt?: boolean;
-  /**
-   * 季節・時間帯の色の細い帯（ホームの楽しさ第2段・映し鏡）。
-   * CSS グラデーション文字列を渡したときだけ、カード最上部に細い帯を付ける。
-   * ホームで表示する自分のカードだけが渡す。公開ページ・設定プレビューでは
-   * 渡さない（活動や時刻を外に出さない）。テーマ背景そのものは上書きしない。
-   */
-  atmosphereStrip?: string | null;
 }) {
   const sceneKey = resolveThemeKey(profile.theme);
   const theme = PROFILE_THEMES[sceneKey];
@@ -458,16 +450,6 @@ export default function ProfilePageView({
       className={`relative flex flex-col overflow-hidden ${className ?? ""}`}
       style={shellStyle}
     >
-      {/* 映し鏡の細い帯（自分のホームだけ。背景の上に重ねるだけで、
-          ユーザーが選んだテーマ背景は上書きしない） */}
-      {atmosphereStrip && (
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-0 top-0 z-10 h-1.5"
-          style={{ background: atmosphereStrip }}
-        />
-      )}
-
       {hasCover ? (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
