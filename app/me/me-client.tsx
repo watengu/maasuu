@@ -11,8 +11,22 @@
 // 自分のページの見た目はトップ（ホームパネル）と公開ページ側が担い、ここは設定に専念する。
 // 基本情報セクションの先頭には ProfilePageView のライブプレビューを置き、
 // 入力・テーマ選択・カード並び替えがその場で仕上がりに反映される（第4弾 2026-10-29）。
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+// 反応の改善（2026-11-06）: 名前などの入力のたびにページ全体が再描画され、
+// スタンプグリッド2面（各32枚）や運営セクションまで描き直していたのを改め、
+// 重いセクションを memo 化した部品に切り出し、props（メモ化した派生値と
+// useCallback 化したハンドラ）で再描画範囲を「入力欄＋ライブプレビュー」に閉じた。
+// 見た目・操作・保存の挙動は変えていない。
+// 戻る導線（2026-11-06 追補）: 左上は /invite と同じ標準形（「← もどる」の
+// 44px 以上のピル型ボタン）に統一し、「設定」の題はボタンと別に見出しで置く。
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { getSession, type Session } from "../auth-client";
 import AppHeader from "../app-header";
 import BackButton from "../back-button";
@@ -59,6 +73,670 @@ const CARD_KIND_LABEL: Record<ProfileCardKind, string> = {
   text: "テキスト",
 };
 
+// フォーム部品の共通クラス（旧: 描画のたびに作っていたものをモジュール定数へ）
+const inputCls = "w-full rounded-xl border px-3 py-2 text-sm outline-none";
+const inputStyle = { borderColor: "var(--line)", background: "var(--surface)" } as const;
+const sectionCls = "rounded-2xl border p-5";
+const sectionStyle = { borderColor: "var(--line)", background: "var(--surface)" } as const;
+
+// PushSection は session が変わるときだけ描き直す
+const MemoPushSection = memo(PushSection);
+
+// ライブプレビュー: props（メモ化された profile / cards / mood）が変わるときだけ描き直す
+const PreviewPane = memo(function PreviewPane({
+  profile,
+  cards,
+  mood,
+}: {
+  profile: Profile;
+  cards: ProfileCard[];
+  mood: { src: string; label: string } | null;
+}) {
+  return (
+    <>
+      <div
+        className="mt-3 overflow-hidden rounded-[24px] border"
+        style={{ borderColor: "var(--line)" }}
+      >
+        <div className="h-[430px]">
+          <ProfilePageView
+            profile={profile}
+            cards={cards}
+            compact
+            className="h-full"
+            mood={mood}
+          />
+        </div>
+      </div>
+      <p className="mt-1.5 text-[11px]" style={{ color: "var(--muted)" }}>
+        プレビュー： 名前・アイコン・背景などの入力がその場で反映されます。
+      </p>
+    </>
+  );
+});
+
+// 「ホームに載せる内容」: カード一覧＋追加フォーム。
+// 名前などの基本情報の入力では props が変わらないため描き直されない。
+const CardsSection = memo(function CardsSection({
+  normalCards,
+  cardKind,
+  cardTitle,
+  cardUrl,
+  cardImageUrl,
+  cardDescription,
+  busy,
+  setCardKind,
+  setCardTitle,
+  setCardUrl,
+  setCardImageUrl,
+  setCardDescription,
+  onAdd,
+  onRemove,
+  onMove,
+}: {
+  normalCards: ProfileCard[];
+  cardKind: ProfileCardKind;
+  cardTitle: string;
+  cardUrl: string;
+  cardImageUrl: string;
+  cardDescription: string;
+  busy: boolean;
+  setCardKind: Dispatch<SetStateAction<ProfileCardKind>>;
+  setCardTitle: Dispatch<SetStateAction<string>>;
+  setCardUrl: Dispatch<SetStateAction<string>>;
+  setCardImageUrl: Dispatch<SetStateAction<string>>;
+  setCardDescription: Dispatch<SetStateAction<string>>;
+  onAdd: () => void;
+  onRemove: (id: number) => void;
+  onMove: (index: number, dir: -1 | 1) => void;
+}) {
+  return (
+    <section className={sectionCls} style={sectionStyle}>
+      <h2 className="text-sm font-bold">ホームに載せる内容</h2>
+      <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
+        リンクや短い文を並べて、あなたのホームと公開ページに出すものです。
+      </p>
+      {normalCards.length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {normalCards.map((c, idx) => (
+            <li
+              key={c.id}
+              className="flex items-center gap-2 rounded-xl border px-3 py-2"
+              style={{ borderColor: "var(--line)" }}
+            >
+              <span className="flex-1 truncate text-sm">
+                <span
+                  className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                  style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
+                >
+                  {CARD_KIND_LABEL[normalizeCardKind(c.kind)]}
+                </span>
+                {c.title}
+              </span>
+              <button
+                type="button"
+                disabled={busy || idx === 0}
+                onClick={() => onMove(idx, -1)}
+                aria-label="上へ"
+                className="px-1 text-sm disabled:opacity-30"
+                style={{ color: "var(--muted)" }}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                disabled={busy || idx === normalCards.length - 1}
+                onClick={() => onMove(idx, 1)}
+                aria-label="下へ"
+                className="px-1 text-sm disabled:opacity-30"
+                style={{ color: "var(--muted)" }}
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onRemove(c.id)}
+                className="text-xs underline underline-offset-2"
+                style={{ color: "var(--muted)" }}
+              >
+                削除
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-3 space-y-2">
+        <div className="flex gap-2">
+          {(["button", "picture", "text"] as ProfileCardKind[]).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setCardKind(k)}
+              className="flex-1 rounded-xl border px-3 py-2 text-sm"
+              style={
+                cardKind === k
+                  ? { borderColor: "var(--accent)", background: "var(--accent-soft)", fontWeight: 700 }
+                  : { borderColor: "var(--line)" }
+              }
+            >
+              {CARD_KIND_LABEL[k]}
+            </button>
+          ))}
+        </div>
+        {cardKind === "picture" && (
+          <div>
+            <label className="mb-1 block text-xs font-bold">
+              画像URL（画像カードの主役です）
+            </label>
+            <input className={inputCls} style={inputStyle} value={cardImageUrl}
+              onChange={(e) => setCardImageUrl(e.target.value)} placeholder="https://..." />
+            <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
+              未設定のときは、テーマの背景にタイトルを表示します。
+            </p>
+          </div>
+        )}
+        <input className={inputCls} style={inputStyle} value={cardTitle} maxLength={80}
+          onChange={(e) => setCardTitle(e.target.value)}
+          placeholder={
+            cardKind === "button"
+              ? "リンクのタイトル"
+              : cardKind === "picture"
+                ? "カードのタイトル"
+                : "見出し（任意）"
+          } />
+        {cardKind !== "button" && (
+          <textarea className={inputCls} style={inputStyle} value={cardDescription} rows={3}
+            maxLength={500}
+            onChange={(e) => setCardDescription(e.target.value)}
+            placeholder={cardKind === "picture" ? "説明（任意）" : "自己紹介などの文章"} />
+        )}
+        <div>
+          {cardKind === "text" && (
+            <label className="mb-1 block text-xs font-bold">URL（任意）</label>
+          )}
+          <input className={inputCls} style={inputStyle} value={cardUrl}
+            onChange={(e) => setCardUrl(e.target.value)}
+            placeholder={cardKind === "picture" ? "リンク先URL（任意）https://..." : "https://..."} />
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onAdd}
+          className="w-full rounded-full border py-2 text-sm font-bold disabled:opacity-50"
+          style={{ borderColor: "var(--accent)", color: "var(--accent-strong)" }}
+        >
+          追加する
+        </button>
+      </div>
+    </section>
+  );
+});
+
+// 「カードを飾る」: スタンプグリッド（32枚）。
+// 選択と保存に関係しない入力では描き直されない。
+const DecoSection = memo(function DecoSection({
+  decoSel,
+  busy,
+  onToggle,
+  onSave,
+}: {
+  decoSel: string[];
+  busy: boolean;
+  onToggle: (src: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <section className={sectionCls} style={sectionStyle}>
+      <h2 className="text-sm font-bold">カードを飾る</h2>
+      <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+        スタンプを最大3つまで選んで、あなたのページに浮く飾りにできます。
+        選んだ順に、右上・左下・右下へ配置されます。タップで選択／解除、
+        上のプレビューで見え方を確認できます。
+      </p>
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {STAMPS.map((s) => {
+          const order = decoSel.indexOf(s.src);
+          const selected = order >= 0;
+          const full = !selected && decoSel.length >= 3;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              disabled={busy || full}
+              onClick={() => onToggle(s.src)}
+              aria-pressed={selected}
+              aria-label={`${s.label}を${selected ? "外す" : "飾る"}`}
+              className="relative rounded-xl border p-1.5 disabled:opacity-40"
+              style={
+                selected
+                  ? {
+                      borderColor: "var(--accent)",
+                      background: "var(--accent-soft)",
+                    }
+                  : { borderColor: "var(--line)", background: "var(--surface)" }
+              }
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={s.src} alt={s.label} loading="lazy" decoding="async" className="mx-auto h-14 w-14 object-contain" />
+              <span className="mt-0.5 block truncate text-center text-[10px]">
+                {s.label}
+              </span>
+              {selected && (
+                <span
+                  className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                  style={{ background: "var(--accent)" }}
+                >
+                  {order + 1}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11px]" style={{ color: "var(--muted)" }}>
+        {decoSel.length} / 3 選択中
+        {decoSel.length >= 3 && "（いっぱいです。外すと別のスタンプを選べます）"}
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onSave}
+        className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-50"
+        style={{ background: "var(--accent)" }}
+      >
+        飾りを保存する
+      </button>
+    </section>
+  );
+});
+
+// 「今日の気分」: スタンプグリッド（32枚）＋公開範囲＋保存。
+// 選択と保存に関係しない入力では描き直されない。
+const MoodSection = memo(function MoodSection({
+  moodSel,
+  moodVis,
+  moodSavedDate,
+  todayKey,
+  busy,
+  onToggle,
+  onVisChange,
+  onSave,
+}: {
+  moodSel: string | null;
+  moodVis: MoodVisibility;
+  moodSavedDate: string | null;
+  todayKey: string;
+  busy: boolean;
+  onToggle: (src: string) => void;
+  onVisChange: Dispatch<SetStateAction<MoodVisibility>>;
+  onSave: () => void;
+}) {
+  return (
+    <section className={sectionCls} style={sectionStyle}>
+      <h2 className="text-sm font-bold">今日の気分</h2>
+      <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+        スタンプを1つ選ぶと、今日だけあなたのページの先頭に出ます。
+        日付が変わると自動で出なくなります。飾り（ずっと置くもの）とは別のものです。
+      </p>
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {STAMPS.map((s) => {
+          const selected = moodSel === s.src;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              disabled={busy}
+              onClick={() => onToggle(s.src)}
+              aria-pressed={selected}
+              aria-label={`今日の気分に「${s.label}」を${selected ? "外す" : "選ぶ"}`}
+              className="relative rounded-xl border p-1.5 disabled:opacity-40"
+              style={
+                selected
+                  ? {
+                      borderColor: "var(--accent)",
+                      background: "var(--accent-soft)",
+                    }
+                  : { borderColor: "var(--line)", background: "var(--surface)" }
+              }
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={s.src} alt={s.label} loading="lazy" decoding="async" className="mx-auto h-14 w-14 object-contain" />
+              <span className="mt-0.5 block truncate text-center text-[10px]">
+                {s.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs font-bold">見せる範囲</p>
+      <div className="mt-2 flex gap-2">
+        {(
+          [
+            ["pub", "公開ページでも出す"],
+            ["priv", "自分のホームだけ"],
+          ] as [MoodVisibility, string][]
+        ).map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            disabled={busy}
+            onClick={() => onVisChange(v)}
+            aria-pressed={moodVis === v}
+            className="flex-1 rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+            style={
+              moodVis === v
+                ? {
+                    borderColor: "var(--accent)",
+                    background: "var(--accent-soft)",
+                    color: "var(--accent-strong)",
+                    fontWeight: 700,
+                  }
+                : { borderColor: "var(--line)", background: "var(--surface)" }
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
+        公開ページがオフのときは、「公開ページでも出す」を選んでも公開ページ自体は出ません。
+      </p>
+      {moodSavedDate && moodSavedDate !== todayKey && (
+        <p className="mt-2 text-[11px]" style={{ color: "var(--muted)" }}>
+          いま保存されているのは {moodSavedDate} の気分です。保存すると今日の気分になります。
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onSave}
+        className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-50"
+        style={{ background: "var(--accent)" }}
+      >
+        {moodSel ? "気分を保存する" : "気分を外して保存する"}
+      </button>
+    </section>
+  );
+});
+
+// 「公開ページ」: オン・オフと URL。切り替えに関係しない入力では描き直されない。
+const PublicSection = memo(function PublicSection({
+  promoOn,
+  promoUrl,
+  busy,
+  onToggle,
+}: {
+  promoOn: boolean;
+  promoUrl: string;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <section className={sectionCls} style={sectionStyle}>
+      <h2 className="text-sm font-bold">公開ページ</h2>
+      <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+        オンにすると、ログインしていない人にも見える、あなたの公開ページが有効になります。
+      </p>
+      <div className="mt-3 flex items-center justify-between">
+        <span className="text-sm font-bold">
+          公開ページ：{promoOn ? "オン" : "オフ"}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={promoOn}
+          aria-label="公開ページのオン・オフ"
+          disabled={busy}
+          onClick={onToggle}
+          className="relative h-7 w-12 shrink-0 rounded-full disabled:opacity-50"
+          style={{ background: promoOn ? "var(--accent)" : "var(--line)" }}
+        >
+          <span
+            className="absolute top-0.5 h-6 w-6 rounded-full shadow"
+            style={{
+              background: "var(--surface)",
+              left: promoOn ? "1.375rem" : "0.125rem",
+            }}
+          />
+        </button>
+      </div>
+      {promoOn && promoUrl && (
+        <>
+          <p className="url-break mt-3 rounded-xl px-3 py-2 text-xs" style={{ background: "var(--accent-soft)" }}>
+            {promoUrl}
+          </p>
+          <LinkActions url={promoUrl} />
+        </>
+      )}
+    </section>
+  );
+});
+
+// 運営専用「2人を繋ぐ招待」: セット一覧・作成フォーム。
+// このセクションの操作に関係しない入力では描き直されない。
+const SET_EXPIRE_MS = 72 * 60 * 60 * 1000;
+
+const OperatorSection = memo(function OperatorSection({
+  sets,
+  joinedNames,
+  expandedDone,
+  newGenre,
+  newNote,
+  canCreateSet,
+  cooldownMs,
+  busy,
+  origin,
+  setNewGenre,
+  setNewNote,
+  onToggleDone,
+  onCreate,
+  onVoid,
+}: {
+  sets: IntroSet[];
+  joinedNames: Map<string, string>;
+  expandedDone: Set<string>;
+  newGenre: Genre;
+  newNote: string;
+  canCreateSet: boolean;
+  cooldownMs: number;
+  busy: boolean;
+  origin: string;
+  setNewGenre: Dispatch<SetStateAction<Genre>>;
+  setNewNote: Dispatch<SetStateAction<string>>;
+  onToggleDone: (id: string) => void;
+  onCreate: () => void;
+  onVoid: (st: IntroSet) => void;
+}) {
+  // 運用の単位は「1URL = 1人分」。URLごとに状態が見える形にする。
+  // このセクションは運営にだけ描画されるため、失効判定の運営条件は満たしたものとして扱う
+  // （旧実装の `me.is_operator &&` と結果は同じ）。
+  const setVoidReason = (st: IntroSet): string | null => {
+    if (st.voided_at) return "取り消し";
+    // サーバー側の失効条件と一致させる: 運営セットは「接続が成立しないまま72時間」で失効
+    // （ダイレクト招待は joined_by_a が最初から入っているため、両方 null の条件では失効しない）。
+    if (
+      !(st.joined_by_a && st.joined_by_b) &&
+      Date.now() - new Date(st.created_at).getTime() > SET_EXPIRE_MS
+    ) {
+      return "期限切れ";
+    }
+    return null;
+  };
+  const urlStatus = (st: IntroSet, joinedBy: string | null): string => {
+    const vr = setVoidReason(st);
+    if (vr) return `失効（${vr}）`;
+    if (!joinedBy) return "未使用";
+    return st.joined_by_a && st.joined_by_b
+      ? `接続済み（${joinedNames.get(joinedBy) ?? "参加者"} さん）`
+      : `待機中（${joinedNames.get(joinedBy) ?? "参加者"} さん参加済み）`;
+  };
+  const bridgeSets = sets.filter((st) => !st.direct);
+  return (
+    <section className={sectionCls} style={sectionStyle}>
+      <h2 className="text-sm font-bold">2人を繋ぐ招待</h2>
+      <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+        あなたが2人を繋ぐ「橋渡し」の招待です。リンクが2本できるので、2人に1本ずつ渡してください。
+        両方が開くと、その2人の繋がりが始まります。あなた自身は繋がりには入りません。
+        運営アカウントは制限なく作れます。
+        あなた自身が相手になる招待（運営用招待）は紹介ページで作ります。
+      </p>
+      <p className="mt-3 text-[11px] font-bold">繋がったあとの流れ</p>
+      <ul
+        className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] leading-relaxed"
+        style={{ color: "var(--muted)" }}
+      >
+        <li>初日（24時間）はスタンプだけのやり取りです。</li>
+        <li>テキストは、2人とも「テキストを許可」して、24時間が過ぎると使えます。</li>
+        <li>メッセージは24時間で見えなくなります。</li>
+        <li>
+          繋がりには期限があります。期限までに往復ターンを達成すると期限が延びます（異性間は3日で往復3ターン・達成で+3日、同性間は7日で往復2ターン・達成で+7日）。残り時間と往復の進み具合は、トーク画面の上部に表示されます。
+        </li>
+      </ul>
+      <p className="mt-3 text-xs font-bold">テーマのジャンル（必須）</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {GENRE_OPTIONS.map((g) => (
+          <button
+            key={g.key}
+            type="button"
+            onClick={() => setNewGenre(g.key)}
+            className="rounded-xl border px-2 py-2 text-xs"
+            style={
+              newGenre === g.key
+                ? {
+                    borderColor: "var(--accent)",
+                    background: "var(--accent-soft)",
+                    color: "var(--accent-strong)",
+                    fontWeight: 700,
+                  }
+                : { borderColor: "var(--line)", background: "var(--surface)" }
+            }
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-3 text-xs font-bold">送り先メモ（任意）</p>
+      <input
+        value={newNote}
+        onChange={(e) => setNewNote(e.target.value.slice(0, 60))}
+        maxLength={60}
+        placeholder="例：○○さん用"
+        className="mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none"
+        style={{ borderColor: "var(--line)", background: "var(--surface)" }}
+      />
+      <button
+        type="button"
+        disabled={busy || !canCreateSet}
+        onClick={onCreate}
+        className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-40"
+        style={{ background: "var(--accent)" }}
+      >
+        {canCreateSet ? "2人を繋ぐ招待を作る" : `次に作れるまで ${formatRemaining(cooldownMs)}`}
+      </button>
+      {bridgeSets.length > 0 && (
+        <ul className="mt-4 space-y-3">
+          {bridgeSets.map((st) => {
+            const both = Boolean(st.joined_by_a && st.joined_by_b);
+            const collapsed = both && !expandedDone.has(st.id);
+            return (
+              <li
+                key={st.id}
+                className="rounded-xl border px-3 py-2"
+                style={{ borderColor: "var(--line)" }}
+              >
+                <p className="flex items-center justify-between text-[11px]" style={{ color: "var(--muted)" }}>
+                  <span>
+                    <span
+                      className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                      style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
+                    >
+                      {genreLabel(st.genre)}
+                    </span>
+                    {st.direct && (
+                      <span
+                        className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+                        style={{ background: "var(--accent)" }}
+                      >
+                        運営用招待
+                      </span>
+                    )}
+                    {formatDateTimeJST(st.created_at)} 作成
+                  </span>
+                  <span className="font-bold">
+                    {both ? "繋がり成立" : setVoidReason(st) ? "失効" : "成立待ち"}
+                  </span>
+                </p>
+                {both && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleDone(st.id)}
+                    aria-expanded={!collapsed}
+                    className="mt-2 text-xs font-bold underline underline-offset-2"
+                    style={{ color: "var(--accent-strong)" }}
+                  >
+                    {collapsed ? "詳細をひらく" : "詳細をとじる"}
+                  </button>
+                )}
+                {!collapsed && (
+                  <>
+                {st.note && (
+                  <p className="mt-1.5 text-xs font-bold">送り先メモ：{st.note}</p>
+                )}
+                <div className="mt-2 space-y-2">
+                  {st.direct ? (
+                    <div>
+                      <p className="text-[11px] font-bold">
+                        招待リンク ・ {urlStatus(st, st.joined_by_b)}
+                      </p>
+                      <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
+                      <LinkActions url={`${origin}/i/${st.code_b}`} />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <p className="text-[11px] font-bold">
+                          1人目用リンク ・ {urlStatus(st, st.joined_by_a)}
+                        </p>
+                        <p className="break-all text-xs">{`${origin}/i/${st.code_a}`}</p>
+                        <LinkActions url={`${origin}/i/${st.code_a}`} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold">
+                          2人目用リンク ・ {urlStatus(st, st.joined_by_b)}
+                        </p>
+                        <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
+                        <LinkActions url={`${origin}/i/${st.code_b}`} />
+                      </div>
+                    </>
+                  )}
+                </div>
+                {!both && !st.voided_at && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onVoid(st)}
+                    className="mt-3 rounded-full border px-4 py-1.5 text-xs font-bold disabled:opacity-50"
+                    style={{
+                      borderColor: "var(--accent)",
+                      background: "var(--surface)",
+                      color: "var(--accent-strong)",
+                    }}
+                  >
+                    この招待を取り消す
+                  </button>
+                )}
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+});
+
 export default function MeClient() {
   const [session, setSession] = useState<Session | null>(null);
   const [me, setMe] = useState<Profile | null>(null);
@@ -72,13 +750,13 @@ export default function MeClient() {
   const [busy, setBusy] = useState(false);
   // 繋がり成立済みの招待行は折りたたむ（詳細はボタンで開く。Ao 指示 2026-10-29）
   const [expandedDone, setExpandedDone] = useState<Set<string>>(new Set());
-  const toggleDone = (id: string) =>
+  const toggleDone = useCallback((id: string) =>
     setExpandedDone((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
-    });
+    }), []);
 
   // 編集用ローカル状態
   const [name, setName] = useState("");
@@ -184,45 +862,36 @@ export default function MeClient() {
     });
   }, [load]);
 
-  if (phase === "loading") {
-    return (
-      <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
-        <p className="text-sm" style={{ color: "var(--muted)" }}>
-          読み込んでいます…
-        </p>
-      </main>
-    );
-  }
-  if (phase === "banned") return <BannedScreen />;
-  if (phase === "error" || !me || !session) {
-    return (
-      <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
-        <p className="text-sm">読み込みに失敗しました。</p>
-      </main>
-    );
-  }
+  // フックは早期リターンより前に置く（React のフック規則。旧実装は素の計算だった
+  // 派生値・ハンドラをメモ化するにあたり、呼び出し順を全描画で一定に保つ）。
+  // ハンドラ内の session / me は、実際に呼ばれる時点（ready 後）では常に非 null。
+  // 念のため冒頭でガードし、旧実装の到達可能性は変えていない。
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const promoUrl = me.promo_code ? `${origin}/p/${me.promo_code}` : "";
+  // スタンプ飾りと通常カードは分けて扱う（飾りは通常一覧・並び替えの対象外。
+  // sort は飾り同士／通常カード同士の中でそれぞれ通し番号として使う）。
+  // 気分行も通常カードには混ぜない（気分セクションだけで扱う）。
+  const normalCards = useMemo(
+    () => cards.filter((c) => !isStampDecoration(c) && !isMoodCard(c)),
+    [cards],
+  );
+  const savedDecos = useMemo(
+    () =>
+      cards
+        .filter(isStampDecoration)
+        .slice()
+        .sort((a, b) => a.sort - b.sort || a.id - b.id),
+    [cards],
+  );
+
   // 取り消したセットはクールダウン計算から除外する（再発行が阻まれないため）。
   // ゲストは紹介セットを作れない（SQL ポリシーでも遮断している）。
   const lastSetAt = sets.find((x) => !x.voided_at)?.created_at ?? null;
   const cooldownMs = introCooldownRemainingMs(lastSetAt);
   // 運営アカウントには本数縛り（クールダウン）を適用しない（Ao 指示 2026-10-28）。
-  const canCreateSet = (me.is_operator || cooldownMs <= 0) && !me.is_guest;
+  const canCreateSet = ((me?.is_operator ?? false) || cooldownMs <= 0) && !(me?.is_guest ?? true);
 
-  // スタンプ飾りと通常カードは分けて扱う（飾りは通常一覧・並び替えの対象外。
-  // sort は飾り同士／通常カード同士の中でそれぞれ通し番号として使う）。
-  // 気分行も通常カードには混ぜない（気分セクションだけで扱う）。
-  const normalCards = cards.filter(
-    (c) => !isStampDecoration(c) && !isMoodCard(c),
-  );
-  const savedDecos = cards
-    .filter(isStampDecoration)
-    .slice()
-    .sort((a, b) => a.sort - b.sort || a.id - b.id);
-
-  const saveProfile = async () => {
+  const saveProfile = useCallback(async () => {
+    if (!session) return;
     setBusy(true);
     setNotice("");
     try {
@@ -242,9 +911,10 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [session, name, iconUrl, coverUrl, theme, statusLine, gender, load]);
 
-  const togglePromo = async () => {
+  const togglePromo = useCallback(async () => {
+    if (!session || !me) return;
     setBusy(true);
     try {
       await updateRows("profiles", `id=eq.${session.userId}`, { promo_on: !me.promo_on });
@@ -255,9 +925,10 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [session, me, load]);
 
-  const addCard = async () => {
+  const addCard = useCallback(async () => {
+    if (!session) return;
     const url = cardUrl.trim();
     const imageUrl = cardImageUrl.trim();
     if (cardKind === "text") {
@@ -305,9 +976,9 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [session, cardKind, cardTitle, cardUrl, cardImageUrl, cardDescription, normalCards, load]);
 
-  const removeCard = async (id: number) => {
+  const removeCard = useCallback(async (id: number) => {
     if (!window.confirm("これを削除しますか？")) return;
     setBusy(true);
     try {
@@ -319,12 +990,12 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [load]);
 
   // カードの並び替え: 通常カードの中だけで入れ替える（飾りの sort には触らない）。
   // ローカル state を入れ替えてプレビューへ即反映し、sort を通し番号に付け替えて
   // 保存する（既存の保存方式＝updateRows に合わせる）。
-  const moveCard = async (index: number, dir: -1 | 1) => {
+  const moveCard = useCallback(async (index: number, dir: -1 | 1) => {
     const target = index + dir;
     if (target < 0 || target >= normalCards.length) return;
     const origSort = new Map(normalCards.map((c) => [c.id, c.sort]));
@@ -349,20 +1020,21 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [cards, normalCards, load]);
 
   // 飾りの選択／解除（下書き。最大3点、選んだ順が配置順）
-  const toggleDeco = (src: string) => {
+  const toggleDeco = useCallback((src: string) => {
     setDecoSel((prev) => {
       if (prev.includes(src)) return prev.filter((x) => x !== src);
       if (prev.length >= 3) return prev;
       return [...prev, src];
     });
-  };
+  }, []);
 
   // 飾りの保存: 飾り行だけを対象に、消えた分は delete・増えた分は insert・
   // 順序が変わった分は sort を更新する。他のカードには触らない。
-  const saveDecorations = async () => {
+  const saveDecorations = useCallback(async () => {
+    if (!session) return;
     setBusy(true);
     setNotice("");
     try {
@@ -401,17 +1073,18 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [session, savedDecos, decoSel, load]);
 
   // 今日の気分の選択／解除（下書き。1つだけ。再タップで解除）
-  const toggleMood = (src: string) => {
+  const toggleMood = useCallback((src: string) => {
     setMoodSel((prev) => (prev === src ? null : src));
-  };
+  }, []);
 
   // 気分の保存: 気分行だけを対象にする（既存の気分行は日付が古いものも含めて
   // すべて置き換える。飾り・通常カードには触らない）。
   // 日付はこの端末のローカル日付で、表示側は「今日」の行だけを出す。
-  const saveMood = async () => {
+  const saveMood = useCallback(async () => {
+    if (!session) return;
     setBusy(true);
     setNotice("");
     try {
@@ -440,11 +1113,11 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [session, cards, moodSel, moodVis, load]);
 
   // 橋渡しセット（リンク2本）の作成は運営のみ（Ao 決定 2026-10-28: ユーザーは橋渡ししない）。
-  const createSet = async () => {
-    if (!canCreateSet || !me.is_operator) return;
+  const createSet = useCallback(async () => {
+    if (!session || !me || !canCreateSet || !me.is_operator) return;
     setBusy(true);
     setNotice("");
     try {
@@ -467,12 +1140,12 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [canCreateSet, me, session, newGenre, newNote, load]);
 
   // ダイレクト招待の作成は紹介ページ（/invite）に移したため、ここには置かない。
   // ここに残すのは運営の橋渡し作成（createSet）だけ。
 
-  const voidSet = async (st: IntroSet) => {
+  const voidSet = useCallback(async (st: IntroSet) => {
     if (
       !window.confirm(
         st.direct
@@ -503,89 +1176,107 @@ export default function MeClient() {
     } finally {
       setBusy(false);
     }
-  };
-
-  // 運用の単位は「1URL = 1人分」。URLごとに状態が見える形にする。
-  const SET_EXPIRE_MS = 72 * 60 * 60 * 1000;
-  const setVoidReason = (st: IntroSet): string | null => {
-    if (st.voided_at) return "取り消し";
-    // サーバー側の失効条件と一致させる: 運営セットは「接続が成立しないまま72時間」で失効
-    // （ダイレクト招待は joined_by_a が最初から入っているため、両方 null の条件では失効しない）。
-    if (
-      me.is_operator &&
-      !(st.joined_by_a && st.joined_by_b) &&
-      Date.now() - new Date(st.created_at).getTime() > SET_EXPIRE_MS
-    ) {
-      return "期限切れ";
-    }
-    return null;
-  };
-  const urlStatus = (st: IntroSet, joinedBy: string | null): string => {
-    const vr = setVoidReason(st);
-    if (vr) return `失効（${vr}）`;
-    if (!joinedBy) return "未使用";
-    return st.joined_by_a && st.joined_by_b
-      ? `接続済み（${joinedNames.get(joinedBy) ?? "参加者"} さん）`
-      : `待機中（${joinedNames.get(joinedBy) ?? "参加者"} さん参加済み）`;
-  };
+  }, [load]);
 
   // ライブプレビュー用: フォームの現在値で上書きしたプロフィール。
   // 入力・テーマ選択のたびに再描画され、仕上がりがその場で確認できる。
-  const previewProfile: Profile = {
-    ...me,
-    display_name: name.trim() || me.display_name,
-    icon_url: iconUrl.trim() || null,
-    cover_url: coverUrl.trim() || null,
-    theme,
-    status_line: statusLine,
-  };
-
-  // 追加フォームで入力中のカードも、下書きとしてプレビューの末尾に即反映する。
-  const hasDraftCard = Boolean(
-    cardTitle.trim() ||
-      cardUrl.trim() ||
-      cardImageUrl.trim() ||
-      cardDescription.trim(),
+  // メモ化し、プレビューの props の同一性を保つ（me が無い間は null）。
+  const previewProfile: Profile | null = useMemo(
+    () =>
+      me
+        ? {
+            ...me,
+            display_name: name.trim() || me.display_name,
+            icon_url: iconUrl.trim() || null,
+            cover_url: coverUrl.trim() || null,
+            theme,
+            status_line: statusLine,
+          }
+        : null,
+    [me, name, iconUrl, coverUrl, theme, statusLine],
   );
+
   // 飾りの下書き（選択中のスタンプ）も、プレビュー用の疑似カードとして混ぜる。
   // kind='picture' + image_url=スタンプの実パス なので、ProfilePageView 側で
   // isStampDecoration により飾りとして描き分けられる。
-  const decoDraftCards: ProfileCard[] = decoSel.map((src, i) => ({
-    id: -1000 - i,
-    user_id: me.id,
-    kind: "picture",
-    title: STAMPS.find((s) => s.src === src)?.label ?? "",
-    url: null,
-    image_url: src,
-    description: null,
-    sort: i,
-    created_at: "",
-  }));
+  const decoDraftCards: ProfileCard[] = useMemo(
+    () =>
+      decoSel.map((src, i) => ({
+        id: -1000 - i,
+        user_id: me?.id ?? "",
+        kind: "picture" as const,
+        title: STAMPS.find((s) => s.src === src)?.label ?? "",
+        url: null,
+        image_url: src,
+        description: null,
+        sort: i,
+        created_at: "",
+      })),
+    [decoSel, me],
+  );
 
-  const previewCards: ProfileCard[] = [
-    ...normalCards,
-    ...(hasDraftCard
-      ? [
-          {
-            id: -1,
-            user_id: me.id,
-            kind: cardKind,
-            title: cardTitle,
-            url: cardUrl.trim() || null,
-            image_url: cardImageUrl.trim() || null,
-            description: cardDescription.trim() || null,
-            sort: normalCards.length,
-            created_at: "",
-          } satisfies ProfileCard,
-        ]
-      : []),
-    ...decoDraftCards,
-  ];
+  // 追加フォームで入力中のカードも、下書きとしてプレビューの末尾に即反映する。
+  const previewCards: ProfileCard[] = useMemo(() => {
+    const hasDraftCard = Boolean(
+      cardTitle.trim() ||
+        cardUrl.trim() ||
+        cardImageUrl.trim() ||
+        cardDescription.trim(),
+    );
+    return [
+      ...normalCards,
+      ...(hasDraftCard
+        ? [
+            {
+              id: -1,
+              user_id: me?.id ?? "",
+              kind: cardKind,
+              title: cardTitle,
+              url: cardUrl.trim() || null,
+              image_url: cardImageUrl.trim() || null,
+              description: cardDescription.trim() || null,
+              sort: normalCards.length,
+              created_at: "",
+            } satisfies ProfileCard,
+          ]
+        : []),
+      ...decoDraftCards,
+    ];
+  }, [normalCards, cardKind, cardTitle, cardUrl, cardImageUrl, cardDescription, decoDraftCards, me]);
 
-  const inputCls = "w-full rounded-xl border px-3 py-2 text-sm outline-none";
-  const inputStyle = { borderColor: "var(--line)", background: "var(--surface)" } as const;
-  const sectionCls = "rounded-2xl border p-5";
-  const sectionStyle = { borderColor: "var(--line)", background: "var(--surface)" } as const;
+  // プレビューに渡す今日の気分（メモ化して同一性を保つ）
+  const previewMood = useMemo(
+    () =>
+      moodSel
+        ? {
+            src: moodSel,
+            label: STAMPS.find((s) => s.src === moodSel)?.label ?? "",
+          }
+        : null,
+    [moodSel],
+  );
+
+  if (phase === "loading") {
+    return (
+      <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
+        <p className="text-sm" style={{ color: "var(--muted)" }}>
+          読み込んでいます…
+        </p>
+      </main>
+    );
+  }
+  if (phase === "banned") return <BannedScreen />;
+  if (phase === "error" || !me || !session) {
+    return (
+      <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
+        <p className="text-sm">読み込みに失敗しました。</p>
+      </main>
+    );
+  }
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const promoUrl = me.promo_code ? `${origin}/p/${me.promo_code}` : "";
+  const todayKey = localDateKey();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -593,11 +1284,14 @@ export default function MeClient() {
       <main className="mx-auto w-full max-w-md flex-1 space-y-4 px-4 py-5">
         <div className="flex items-center gap-3">
           <BackButton
-            className="text-sm"
-            style={{ color: "var(--muted)" }}
-            ariaLabel="もどる"
+            className="flex min-h-[44px] items-center rounded-full border px-4 text-sm font-bold"
+            style={{
+              borderColor: "var(--line)",
+              background: "var(--surface)",
+              color: "var(--text)",
+            }}
           >
-            ←
+            ← もどる
           </BackButton>
           <h1 className="text-base font-bold">設定</h1>
         </div>
@@ -612,31 +1306,11 @@ export default function MeClient() {
 
         <section className={sectionCls} style={sectionStyle}>
           <h2 className="text-sm font-bold">基本情報</h2>
-          <div
-            className="mt-3 overflow-hidden rounded-[24px] border"
-            style={{ borderColor: "var(--line)" }}
-          >
-            <div className="h-[430px]">
-              <ProfilePageView
-                profile={previewProfile}
-                cards={previewCards}
-                compact
-                className="h-full"
-                mood={
-                  moodSel
-                    ? {
-                        src: moodSel,
-                        label:
-                          STAMPS.find((s) => s.src === moodSel)?.label ?? "",
-                      }
-                    : null
-                }
-              />
-            </div>
-          </div>
-          <p className="mt-1.5 text-[11px]" style={{ color: "var(--muted)" }}>
-            プレビュー： 名前・アイコン・背景などの入力がその場で反映されます。
-          </p>
+          <PreviewPane
+            profile={previewProfile ?? me}
+            cards={previewCards}
+            mood={previewMood}
+          />
           <div className="mt-3 space-y-3">
             <div>
               <label className="mb-1 block text-xs font-bold">名前</label>
@@ -739,274 +1413,43 @@ export default function MeClient() {
           </div>
         </section>
 
-        <PushSection session={session} />
+        <MemoPushSection session={session} />
 
-        <section className={sectionCls} style={sectionStyle}>
-          <h2 className="text-sm font-bold">ホームに載せる内容</h2>
-          <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
-            リンクや短い文を並べて、あなたのホームと公開ページに出すものです。
-          </p>
-          {normalCards.length > 0 && (
-            <ul className="mt-3 space-y-2">
-              {normalCards.map((c, idx) => (
-                <li
-                  key={c.id}
-                  className="flex items-center gap-2 rounded-xl border px-3 py-2"
-                  style={{ borderColor: "var(--line)" }}
-                >
-                  <span className="flex-1 truncate text-sm">
-                    <span
-                      className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold"
-                      style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
-                    >
-                      {CARD_KIND_LABEL[normalizeCardKind(c.kind)]}
-                    </span>
-                    {c.title}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={busy || idx === 0}
-                    onClick={() => moveCard(idx, -1)}
-                    aria-label="上へ"
-                    className="px-1 text-sm disabled:opacity-30"
-                    style={{ color: "var(--muted)" }}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || idx === normalCards.length - 1}
-                    onClick={() => moveCard(idx, 1)}
-                    aria-label="下へ"
-                    className="px-1 text-sm disabled:opacity-30"
-                    style={{ color: "var(--muted)" }}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => removeCard(c.id)}
-                    className="text-xs underline underline-offset-2"
-                    style={{ color: "var(--muted)" }}
-                  >
-                    削除
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="mt-3 space-y-2">
-            <div className="flex gap-2">
-              {(["button", "picture", "text"] as ProfileCardKind[]).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setCardKind(k)}
-                  className="flex-1 rounded-xl border px-3 py-2 text-sm"
-                  style={
-                    cardKind === k
-                      ? { borderColor: "var(--accent)", background: "var(--accent-soft)", fontWeight: 700 }
-                      : { borderColor: "var(--line)" }
-                  }
-                >
-                  {CARD_KIND_LABEL[k]}
-                </button>
-              ))}
-            </div>
-            {cardKind === "picture" && (
-              <div>
-                <label className="mb-1 block text-xs font-bold">
-                  画像URL（画像カードの主役です）
-                </label>
-                <input className={inputCls} style={inputStyle} value={cardImageUrl}
-                  onChange={(e) => setCardImageUrl(e.target.value)} placeholder="https://..." />
-                <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
-                  未設定のときは、テーマの背景にタイトルを表示します。
-                </p>
-              </div>
-            )}
-            <input className={inputCls} style={inputStyle} value={cardTitle} maxLength={80}
-              onChange={(e) => setCardTitle(e.target.value)}
-              placeholder={
-                cardKind === "button"
-                  ? "リンクのタイトル"
-                  : cardKind === "picture"
-                    ? "カードのタイトル"
-                    : "見出し（任意）"
-              } />
-            {cardKind !== "button" && (
-              <textarea className={inputCls} style={inputStyle} value={cardDescription} rows={3}
-                maxLength={500}
-                onChange={(e) => setCardDescription(e.target.value)}
-                placeholder={cardKind === "picture" ? "説明（任意）" : "自己紹介などの文章"} />
-            )}
-            <div>
-              {cardKind === "text" && (
-                <label className="mb-1 block text-xs font-bold">URL（任意）</label>
-              )}
-              <input className={inputCls} style={inputStyle} value={cardUrl}
-                onChange={(e) => setCardUrl(e.target.value)}
-                placeholder={cardKind === "picture" ? "リンク先URL（任意）https://..." : "https://..."} />
-            </div>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={addCard}
-              className="w-full rounded-full border py-2 text-sm font-bold disabled:opacity-50"
-              style={{ borderColor: "var(--accent)", color: "var(--accent-strong)" }}
-            >
-              追加する
-            </button>
-          </div>
-        </section>
+        <CardsSection
+          normalCards={normalCards}
+          cardKind={cardKind}
+          cardTitle={cardTitle}
+          cardUrl={cardUrl}
+          cardImageUrl={cardImageUrl}
+          cardDescription={cardDescription}
+          busy={busy}
+          setCardKind={setCardKind}
+          setCardTitle={setCardTitle}
+          setCardUrl={setCardUrl}
+          setCardImageUrl={setCardImageUrl}
+          setCardDescription={setCardDescription}
+          onAdd={addCard}
+          onRemove={removeCard}
+          onMove={moveCard}
+        />
 
-        <section className={sectionCls} style={sectionStyle}>
-          <h2 className="text-sm font-bold">カードを飾る</h2>
-          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            スタンプを最大3つまで選んで、あなたのページに浮く飾りにできます。
-            選んだ順に、右上・左下・右下へ配置されます。タップで選択／解除、
-            上のプレビューで見え方を確認できます。
-          </p>
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            {STAMPS.map((s) => {
-              const order = decoSel.indexOf(s.src);
-              const selected = order >= 0;
-              const full = !selected && decoSel.length >= 3;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  disabled={busy || full}
-                  onClick={() => toggleDeco(s.src)}
-                  aria-pressed={selected}
-                  aria-label={`${s.label}を${selected ? "外す" : "飾る"}`}
-                  className="relative rounded-xl border p-1.5 disabled:opacity-40"
-                  style={
-                    selected
-                      ? {
-                          borderColor: "var(--accent)",
-                          background: "var(--accent-soft)",
-                        }
-                      : { borderColor: "var(--line)", background: "var(--surface)" }
-                  }
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={s.src} alt={s.label} className="mx-auto h-14 w-14 object-contain" />
-                  <span className="mt-0.5 block truncate text-center text-[10px]">
-                    {s.label}
-                  </span>
-                  {selected && (
-                    <span
-                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                      style={{ background: "var(--accent)" }}
-                    >
-                      {order + 1}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-2 text-[11px]" style={{ color: "var(--muted)" }}>
-            {decoSel.length} / 3 選択中
-            {decoSel.length >= 3 && "（いっぱいです。外すと別のスタンプを選べます）"}
-          </p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={saveDecorations}
-            className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-50"
-            style={{ background: "var(--accent)" }}
-          >
-            飾りを保存する
-          </button>
-        </section>
+        <DecoSection
+          decoSel={decoSel}
+          busy={busy}
+          onToggle={toggleDeco}
+          onSave={saveDecorations}
+        />
 
-        <section className={sectionCls} style={sectionStyle}>
-          <h2 className="text-sm font-bold">今日の気分</h2>
-          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            スタンプを1つ選ぶと、今日だけあなたのページの先頭に出ます。
-            日付が変わると自動で出なくなります。飾り（ずっと置くもの）とは別のものです。
-          </p>
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            {STAMPS.map((s) => {
-              const selected = moodSel === s.src;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => toggleMood(s.src)}
-                  aria-pressed={selected}
-                  aria-label={`今日の気分に「${s.label}」を${selected ? "外す" : "選ぶ"}`}
-                  className="relative rounded-xl border p-1.5 disabled:opacity-40"
-                  style={
-                    selected
-                      ? {
-                          borderColor: "var(--accent)",
-                          background: "var(--accent-soft)",
-                        }
-                      : { borderColor: "var(--line)", background: "var(--surface)" }
-                  }
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={s.src} alt={s.label} className="mx-auto h-14 w-14 object-contain" />
-                  <span className="mt-0.5 block truncate text-center text-[10px]">
-                    {s.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-3 text-xs font-bold">見せる範囲</p>
-          <div className="mt-2 flex gap-2">
-            {(
-              [
-                ["pub", "公開ページでも出す"],
-                ["priv", "自分のホームだけ"],
-              ] as [MoodVisibility, string][]
-            ).map(([v, label]) => (
-              <button
-                key={v}
-                type="button"
-                disabled={busy}
-                onClick={() => setMoodVis(v)}
-                aria-pressed={moodVis === v}
-                className="flex-1 rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
-                style={
-                  moodVis === v
-                    ? {
-                        borderColor: "var(--accent)",
-                        background: "var(--accent-soft)",
-                        color: "var(--accent-strong)",
-                        fontWeight: 700,
-                      }
-                    : { borderColor: "var(--line)", background: "var(--surface)" }
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
-            公開ページがオフのときは、「公開ページでも出す」を選んでも公開ページ自体は出ません。
-          </p>
-          {moodSavedDate && moodSavedDate !== localDateKey() && (
-            <p className="mt-2 text-[11px]" style={{ color: "var(--muted)" }}>
-              いま保存されているのは {moodSavedDate} の気分です。保存すると今日の気分になります。
-            </p>
-          )}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={saveMood}
-            className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-50"
-            style={{ background: "var(--accent)" }}
-          >
-            {moodSel ? "気分を保存する" : "気分を外して保存する"}
-          </button>
-        </section>
+        <MoodSection
+          moodSel={moodSel}
+          moodVis={moodVis}
+          moodSavedDate={moodSavedDate}
+          todayKey={todayKey}
+          busy={busy}
+          onToggle={toggleMood}
+          onVisChange={setMoodVis}
+          onSave={saveMood}
+        />
 
         {me.is_guest && (
           <section className={sectionCls} style={sectionStyle}>
@@ -1020,223 +1463,42 @@ export default function MeClient() {
         )}
 
         {!me.is_guest && (
-        <section className={sectionCls} style={sectionStyle}>
-          <h2 className="text-sm font-bold">公開ページ</h2>
-          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            オンにすると、ログインしていない人にも見える、あなたの公開ページが有効になります。
-          </p>
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-sm font-bold">
-              公開ページ：{me.promo_on ? "オン" : "オフ"}
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={me.promo_on}
-              aria-label="公開ページのオン・オフ"
-              disabled={busy}
-              onClick={togglePromo}
-              className="relative h-7 w-12 shrink-0 rounded-full disabled:opacity-50"
-              style={{ background: me.promo_on ? "var(--accent)" : "var(--line)" }}
-            >
-              <span
-                className="absolute top-0.5 h-6 w-6 rounded-full shadow"
-                style={{
-                  background: "var(--surface)",
-                  left: me.promo_on ? "1.375rem" : "0.125rem",
-                }}
-              />
-            </button>
-          </div>
-          {me.promo_on && promoUrl && (
-            <>
-              <p className="url-break mt-3 rounded-xl px-3 py-2 text-xs" style={{ background: "var(--accent-soft)" }}>
-                {promoUrl}
-              </p>
-              <LinkActions url={promoUrl} />
-            </>
-          )}
-        </section>
+          <PublicSection
+            promoOn={me.promo_on}
+            promoUrl={promoUrl}
+            busy={busy}
+            onToggle={togglePromo}
+          />
         )}
 
         {!me.is_guest && !me.is_operator && (
         <section className={sectionCls} style={sectionStyle}>
           <h2 className="text-sm font-bold">招待リンク</h2>
+          {/* 紹介ページへの入り口は上部メニュー（紹介）に一本化したため、
+              ここは移転の案内文だけにする（リンク統一 2026-11-06） */}
           <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            招待リンクの作成と管理は、紹介ページに移りました。
-          </p>
-          <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            <Link href="/invite" className="underline underline-offset-2">
-              紹介ページを開く
-            </Link>
+            招待リンクの作成と管理は、紹介ページに移りました。上部メニューの「紹介」から開けます。
           </p>
         </section>
         )}
 
         {me.is_operator && (
-        <section className={sectionCls} style={sectionStyle}>
-          <h2 className="text-sm font-bold">2人を繋ぐ招待</h2>
-          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            あなたが2人を繋ぐ「橋渡し」の招待です。リンクが2本できるので、2人に1本ずつ渡してください。
-            両方が開くと、その2人の繋がりが始まります。あなた自身は繋がりには入りません。
-            運営アカウントは制限なく作れます。
-            あなた自身が相手になる招待（運営用招待）は紹介ページで作ります。
-          </p>
-          <p className="mt-3 text-[11px] font-bold">繋がったあとの流れ</p>
-          <ul
-            className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] leading-relaxed"
-            style={{ color: "var(--muted)" }}
-          >
-            <li>初日（24時間）はスタンプだけのやり取りです。</li>
-            <li>テキストは、2人とも「テキストを許可」して、24時間が過ぎると使えます。</li>
-            <li>メッセージは24時間で見えなくなります。</li>
-            <li>
-              繋がりには期限があります。期限までに往復ターンを達成すると期限が延びます（異性間は3日で往復3ターン・達成で+3日、同性間は7日で往復2ターン・達成で+7日）。残り時間と往復の進み具合は、トーク画面の上部に表示されます。
-            </li>
-          </ul>
-          <p className="mt-3 text-xs font-bold">テーマのジャンル（必須）</p>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {GENRE_OPTIONS.map((g) => (
-              <button
-                key={g.key}
-                type="button"
-                onClick={() => setNewGenre(g.key)}
-                className="rounded-xl border px-2 py-2 text-xs"
-                style={
-                  newGenre === g.key
-                    ? {
-                        borderColor: "var(--accent)",
-                        background: "var(--accent-soft)",
-                        color: "var(--accent-strong)",
-                        fontWeight: 700,
-                      }
-                    : { borderColor: "var(--line)", background: "var(--surface)" }
-                }
-              >
-                {g.label}
-              </button>
-            ))}
-          </div>
-          <p className="mt-3 text-xs font-bold">送り先メモ（任意）</p>
-          <input
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value.slice(0, 60))}
-            maxLength={60}
-            placeholder="例：○○さん用"
-            className="mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: "var(--line)", background: "var(--surface)" }}
+          <OperatorSection
+            sets={sets}
+            joinedNames={joinedNames}
+            expandedDone={expandedDone}
+            newGenre={newGenre}
+            newNote={newNote}
+            canCreateSet={canCreateSet}
+            cooldownMs={cooldownMs}
+            busy={busy}
+            origin={origin}
+            setNewGenre={setNewGenre}
+            setNewNote={setNewNote}
+            onToggleDone={toggleDone}
+            onCreate={createSet}
+            onVoid={voidSet}
           />
-          {me.is_operator && (
-            <button
-              type="button"
-              disabled={busy || !canCreateSet}
-              onClick={createSet}
-              className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-40"
-              style={{ background: "var(--accent)" }}
-            >
-              {canCreateSet ? "2人を繋ぐ招待を作る" : `次に作れるまで ${formatRemaining(cooldownMs)}`}
-            </button>
-          )}
-          {sets.filter((st) => !st.direct).length > 0 && (
-            <ul className="mt-4 space-y-3">
-              {sets.filter((st) => !st.direct).map((st) => {
-                const both = Boolean(st.joined_by_a && st.joined_by_b);
-                const collapsed = both && !expandedDone.has(st.id);
-                return (
-                  <li
-                    key={st.id}
-                    className="rounded-xl border px-3 py-2"
-                    style={{ borderColor: "var(--line)" }}
-                  >
-                    <p className="flex items-center justify-between text-[11px]" style={{ color: "var(--muted)" }}>
-                      <span>
-                        <span
-                          className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold"
-                          style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
-                        >
-                          {genreLabel(st.genre)}
-                        </span>
-                        {st.direct && (
-                          <span
-                            className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
-                            style={{ background: "var(--accent)" }}
-                          >
-                            {me.is_operator ? "運営用招待" : "招待"}
-                          </span>
-                        )}
-                        {formatDateTimeJST(st.created_at)} 作成
-                      </span>
-                      <span className="font-bold">
-                        {both ? "繋がり成立" : setVoidReason(st) ? "失効" : "成立待ち"}
-                      </span>
-                    </p>
-                    {both && (
-                      <button
-                        type="button"
-                        onClick={() => toggleDone(st.id)}
-                        aria-expanded={!collapsed}
-                        className="mt-2 text-xs font-bold underline underline-offset-2"
-                        style={{ color: "var(--accent-strong)" }}
-                      >
-                        {collapsed ? "詳細をひらく" : "詳細をとじる"}
-                      </button>
-                    )}
-                    {!collapsed && (
-                      <>
-                    {st.note && (
-                      <p className="mt-1.5 text-xs font-bold">送り先メモ：{st.note}</p>
-                    )}
-                    <div className="mt-2 space-y-2">
-                      {st.direct ? (
-                        <div>
-                          <p className="text-[11px] font-bold">
-                            招待リンク ・ {urlStatus(st, st.joined_by_b)}
-                          </p>
-                          <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
-                          <LinkActions url={`${origin}/i/${st.code_b}`} />
-                        </div>
-                      ) : (
-                        <>
-                          <div>
-                            <p className="text-[11px] font-bold">
-                              1人目用リンク ・ {urlStatus(st, st.joined_by_a)}
-                            </p>
-                            <p className="break-all text-xs">{`${origin}/i/${st.code_a}`}</p>
-                            <LinkActions url={`${origin}/i/${st.code_a}`} />
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-bold">
-                              2人目用リンク ・ {urlStatus(st, st.joined_by_b)}
-                            </p>
-                            <p className="break-all text-xs">{`${origin}/i/${st.code_b}`}</p>
-                            <LinkActions url={`${origin}/i/${st.code_b}`} />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    {!both && !st.voided_at && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => voidSet(st)}
-                        className="mt-3 rounded-full border px-4 py-1.5 text-xs font-bold disabled:opacity-50"
-                        style={{
-                          borderColor: "var(--accent)",
-                          background: "var(--surface)",
-                          color: "var(--accent-strong)",
-                        }}
-                      >
-                        この招待を取り消す
-                      </button>
-                    )}
-                      </>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
         )}
       </main>
     </div>

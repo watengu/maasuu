@@ -254,8 +254,10 @@ export default function TalkClient() {
     return (
       <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
         <p className="text-sm">{errorMsg || "エラーが発生しました。"}</p>
-        <p className="mt-4 text-xs">
-          <BackButton className="underline">繋がり一覧へ戻る</BackButton>
+        <p className="mt-4">
+          <BackButton className="inline-flex min-h-[44px] items-center rounded-full border px-4 text-sm font-bold" style={{ borderColor: "var(--line)", background: "var(--surface)", color: "var(--text)" }}>
+            ← もどる
+          </BackButton>
         </p>
       </main>
     );
@@ -424,11 +426,14 @@ export default function TalkClient() {
         <div className="mx-auto w-full max-w-md px-4 py-3">
           <div className="flex items-center gap-3">
             <BackButton
-              className="text-sm"
-              style={{ color: "var(--muted)" }}
-              ariaLabel="もどる"
+              className="flex min-h-[44px] shrink-0 items-center rounded-full border px-4 text-sm font-bold"
+              style={{
+                borderColor: "var(--line)",
+                background: "var(--surface)",
+                color: "var(--text)",
+              }}
             >
-              ←
+              ← もどる
             </BackButton>
             {partner?.icon_url ? (
               // eslint-disable-next-line @next/next/no-img-element

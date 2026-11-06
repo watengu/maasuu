@@ -376,8 +376,10 @@ export default function IntroClient() {
     return (
       <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
         <p className="text-sm">{phase.message}</p>
-        <p className="mt-4 text-xs">
-          <BackButton className="underline">ホームへ戻る</BackButton>
+        <p className="mt-4">
+          <BackButton className="inline-flex min-h-[44px] items-center rounded-full border px-4 text-sm font-bold" style={{ borderColor: "var(--line)", background: "var(--surface)", color: "var(--text)" }}>
+            ← もどる
+          </BackButton>
         </p>
       </main>
     );

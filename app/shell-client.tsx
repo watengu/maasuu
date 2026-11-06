@@ -339,6 +339,11 @@ export default function ShellClient() {
             マァスゥ
           </span>
           <nav className="flex items-center gap-4 text-sm">
+            {/* 紹介への常設入り口は上部メニューに置く（リンク統一 2026-11-06）。
+                AppHeader（/me・/invite）と同じ並び・名前で揃える */}
+            <Link href="/invite" className="underline-offset-2 hover:underline">
+              紹介
+            </Link>
             <Link href="/me" className="underline-offset-2 hover:underline">
               設定
             </Link>

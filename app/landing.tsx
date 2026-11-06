@@ -244,7 +244,7 @@ export default function LandingScreen() {
             boxShadow: "0 16px 32px rgba(64, 30, 6, 0.3)",
           }}
         >
-          Googleではじめる
+          Googleでログイン
         </button>
 
         {/* ===== 中面 ===== */}

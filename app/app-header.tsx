@@ -15,9 +15,12 @@ export default function AppHeader() {
       style={{ background: "var(--bg)", borderColor: "var(--line)" }}
     >
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
-        <Link href="/" className="text-lg font-bold tracking-wide" style={{ color: "var(--accent-strong)" }}>
+        {/* ブランド名はリンクにしない（シェル側ヘッダーと同形）。トップへの
+            入り口は名前つきの「つながり」に一本化する（リンク統一 2026-11-06:
+            同じ行き先への入り口は原則1か所、名前と行き先は1対1） */}
+        <span className="text-lg font-bold tracking-wide" style={{ color: "var(--accent-strong)" }}>
           マァスゥ
-        </Link>
+        </span>
         <nav className="flex items-center gap-4 text-sm">
           <Link href="/" className="underline-offset-2 hover:underline">
             つながり

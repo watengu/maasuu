@@ -64,9 +64,9 @@ export default function TermsPage() {
           </p>
         </section>
       </div>
-      <p className="mt-10 text-center text-xs">
-        <BackButton className="underline underline-offset-2">
-          ホームへ戻る
+      <p className="mt-10 text-center">
+        <BackButton className="inline-flex min-h-[44px] items-center rounded-full border px-4 text-sm font-bold" style={{ borderColor: "var(--line)", background: "var(--surface)", color: "var(--text)" }}>
+          ← もどる
         </BackButton>
       </p>
     </main>
