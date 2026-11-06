@@ -20,6 +20,14 @@
 //    スタンプを1つ「贈る」。送信はトーク画面と全く同じ経路・判定を使う。
 //  - 自分のカードは compact 表示にして、「次にやること」まで一画面に入る
 //    高さに寄せる（公開ページ側の表示は変えない）。
+// ホームの楽しさ第2段（2026-11-06）:
+//  - 映し鏡: 帯に季節・時間帯の情景チップ（lib/atmosphere。端末内で完結）と
+//    2匹の様子（状態語）を添え、自分のカードの上部にだけ季節・時間帯の色の
+//    細い帯を付ける（公開ページ・設定プレビューには付けない）。
+//    状態語は時間帯が基本で、今日の活動が読み込み済みデータで分かる場合だけ
+//    「元気」の側へ寄せる。責める表現は入れない。
+//  - 掛け合い: 帯の文案は文脈（気分＞飾り＞ラッキー＞季節・時間帯＞通常）を
+//    seed で散らして1つ選ぶ（lib/daily-message の homeBanter）。
 // 公開ページ（/p/[code]）と同じ見た目（ProfilePageView）で、自分のアイコン・名前・
 // 一言・カードを表示する。promo_on の有無にかかわらず本人には常に見える
 // （promo_on は「他人から /p で見えるか」だけを決める）。
@@ -42,7 +50,8 @@ import {
 } from "../lib/engine";
 import { formatRemaining } from "../lib/format";
 import { AVATAR_CLASS } from "../lib/avatar";
-import { dailyMessage } from "../lib/daily-message";
+import { homeBanter } from "../lib/daily-message";
+import { atmosphereFor, pairStateFor } from "../lib/atmosphere";
 import { localDateKey, luckyStampFor } from "../lib/lucky";
 import { resolveTodaysMood } from "../lib/mood";
 import { STAMPS } from "../lib/stamps";
@@ -257,10 +266,35 @@ export default function HomePanel({
   };
 
   // 今日のマァスゥとラッキースタンプは同じ seed（日付＋自分のID）で決まる
-  const today = dailyMessage(me.id, now);
   const myLucky = luckyStampFor(me.id, now);
   // 今日の気分（自分のホームなので pub / priv の両方を出す。未設定なら誘導）
   const myMood = resolveTodaysMood(cards, localDateKey(now), true);
+  // 映し鏡: 端末の日時から季節・時間帯の空気を決める（保存なし）
+  const atmo = atmosphereFor(now);
+  // 2匹の様子: 時間帯が基本。今日の活動が読み込み済みのデータで分かる場合
+  // （今日の気分を置いた／この画面でスタンプを贈った）だけ「元気」側へ寄せる。
+  // ターンの送信有無はこのパネルの読み込み範囲に無いので、状態には使わない。
+  const pairState = pairStateFor(atmo, {
+    engagedToday: myMood !== null || gift?.stage === "done",
+  });
+  // 掛け合い: 文脈（気分・飾り・ラッキー・季節／時間帯・通常）を seed で散らす
+  const decorationLabels = cards
+    .filter(isStampDecoration)
+    .slice()
+    .sort((a, b) => a.sort - b.sort || a.id - b.id)
+    .map(
+      (c) =>
+        STAMPS.find((s) => s.src === c.image_url)?.label ??
+        (c.title.trim() ? c.title : null),
+    )
+    .filter((l): l is string => l !== null);
+  const today = homeBanter(me.id, now, {
+    timeBand: atmo.timeBand,
+    season: atmo.season,
+    luckyLabel: myLucky.label,
+    moodLabel: myMood?.stamp.label ?? null,
+    decorationLabels,
+  });
 
   const footer = (
     <div className="text-center text-xs leading-relaxed text-balance">
@@ -303,7 +337,8 @@ export default function HomePanel({
   return (
     <div className="flex h-full min-w-0 flex-col">
       {/* 1. 今日のマァスゥ＋今日のラッキースタンプ（操作性修正 2026-11-06:
-          帯を1行に圧縮し、ラッキースタンプは行内に小さく収める） */}
+          帯を1行に圧縮し、ラッキースタンプは行内に小さく収める。
+          第2段で季節・時間帯の情景チップ＋2匹の様子を同じ行に添える） */}
       <div className="shrink-0 px-4 pt-3">
         <section
           className="flex items-center gap-2.5 rounded-full py-1.5 pr-2 pl-3.5"
@@ -314,6 +349,13 @@ export default function HomePanel({
             style={{ color: "var(--accent-strong)" }}
           >
             今日のマァスゥ
+          </span>
+          <span
+            className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap"
+            style={{ background: atmo.chipGradient, color: atmo.chipColor }}
+            title={`${atmo.seasonLabel}・${atmo.timeBandLabel}`}
+          >
+            {atmo.sceneWord}、{pairState}
           </span>
           <span
             className="min-w-0 flex-1 truncate text-xs"
@@ -338,6 +380,7 @@ export default function HomePanel({
         cards={cards}
         footer={footer}
         compact
+        atmosphereStrip={atmo.stripGradient}
         mood={
           myMood
             ? { src: myMood.stamp.src, label: myMood.stamp.label }
