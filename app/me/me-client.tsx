@@ -27,6 +27,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import Link from "next/link";
 import { getSession, type Session } from "../auth-client";
 import AppHeader from "../app-header";
 import BackButton from "../back-button";
@@ -1500,6 +1501,22 @@ export default function MeClient() {
             onVoid={voidSet}
           />
         )}
+
+        {/* 法務への入り口（2026-11-06 追補・メイン判断）: ログイン中は
+            ランディングのフッターに辿り着けないため、設定ページの最下部に
+            置く。名前・行き先はランディングのフッターと1対1で揃える。 */}
+        <footer
+          className="pt-2 pb-1 text-center text-xs"
+          style={{ color: "var(--muted)" }}
+        >
+          <Link href="/legal/terms" className="underline underline-offset-2">
+            利用規約
+          </Link>
+          <span className="mx-2">・</span>
+          <Link href="/legal/privacy" className="underline underline-offset-2">
+            プライバシーポリシー
+          </Link>
+        </footer>
       </main>
     </div>
   );
