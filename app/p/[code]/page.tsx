@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import ProfilePageView from "../../profile-page-view";
 import type { Profile, ProfileCard } from "../../../lib/types";
+import { resolveTodaysMood } from "../../../lib/mood";
+import { jstDateKey } from "../../../lib/lucky";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../../../lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -38,11 +40,19 @@ export default async function PromoPage({
     `profile_cards?user_id=eq.${profile.id}&order=sort.asc,id.asc&select=*`,
   );
 
+  // 今日の気分: 公開ページでは「公開（pub）」かつ日付が今日（JST）のものだけ出す。
+  // 非公開（priv）の気分はここでは出さない。
+  const resolvedMood = resolveTodaysMood(cards, jstDateKey(), false);
+  const mood = resolvedMood
+    ? { src: resolvedMood.stamp.src, label: resolvedMood.stamp.label }
+    : null;
+
   return (
     <main className="flex min-h-dvh w-full flex-col">
       <ProfilePageView
         profile={profile}
         cards={cards}
+        mood={mood}
         className="min-h-dvh flex-1"
         footer={
           <p className="text-center text-xs leading-relaxed opacity-85">

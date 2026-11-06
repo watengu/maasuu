@@ -11,6 +11,15 @@
 // 期限・往復の判定は lib/engine の既存ロジック（シェル側で計算済みの値）に従う。
 // スタンプ飾り（isStampDecoration）は「カード」には数えない（飾りは
 // ProfilePageView が浮く飾りとして描き分ける）。
+// ホームの楽しさ第1段（2026-11-06）:
+//  - 今日の気分: cards の気分行を解決して ProfilePageView の気分枠に渡す。
+//    自分のホームでは pub / priv の両方を出し、未設定なら静かな誘導を出す。
+//  - 今日のラッキースタンプ: 日付＋ユーザーIDの決定的計算（lib/lucky）。
+//    今日のマァスゥの文案選択も同じ seed。相手と一致したら「今日おそろい」。
+//  - 繋がりへのひと押し: 期限が近い（残り24時間未満）相手に、ホームから
+//    スタンプを1つ「贈る」。送信はトーク画面と全く同じ経路・判定を使う。
+//  - 自分のカードは compact 表示にして、「次にやること」まで一画面に入る
+//    高さに寄せる（公開ページ側の表示は変えない）。
 // 公開ページ（/p/[code]）と同じ見た目（ProfilePageView）で、自分のアイコン・名前・
 // 一言・カードを表示する。promo_on の有無にかかわらず本人には常に見える
 // （promo_on は「他人から /p で見えるか」だけを決める）。
@@ -22,14 +31,28 @@ import Link from "next/link";
 import ProfilePageView from "./profile-page-view";
 import type { ConnView } from "./friends-panel";
 import type { Session } from "./auth-client";
-import { remainingMs } from "../lib/engine";
+import {
+  checkSend,
+  judgeConnection,
+  remainingMs,
+  rulesFor,
+} from "../lib/engine";
 import { formatRemaining } from "../lib/format";
 import { AVATAR_CLASS } from "../lib/avatar";
 import { dailyMessage } from "../lib/daily-message";
+import { localDateKey, luckyStampFor } from "../lib/lucky";
+import { resolveTodaysMood } from "../lib/mood";
+import { STAMPS } from "../lib/stamps";
 import { loadHidden } from "../lib/hidden";
-import { selectRows } from "../lib/supabase";
-import type { IntroSet, Profile, ProfileCard } from "../lib/types";
-import { isStampDecoration } from "../lib/types";
+import {
+  SUPABASE_ANON_KEY,
+  SUPABASE_URL,
+  insertRow,
+  selectRows,
+  updateRows,
+} from "../lib/supabase";
+import type { IntroSet, Profile, ProfileCard, Turn } from "../lib/types";
+import { isMoodCard, isStampDecoration } from "../lib/types";
 
 // 運営セットの失効（72時間）は invite-section / /me と同じ条件。
 const SET_EXPIRE_MS = 72 * 60 * 60 * 1000;
@@ -45,9 +68,19 @@ export default function HomePanel({
   cards: ProfileCard[];
   views: ConnView[] | null;
 }) {
-  // スタンプ飾りを除いた通常カード（「カード未登録」の判定と footer の出し分け用）
-  const normalCards = cards.filter((c) => !isStampDecoration(c));
+  // スタンプ飾りと気分行を除いた通常カード（「カード未登録」の判定と footer の出し分け用）
+  const normalCards = cards.filter(
+    (c) => !isStampDecoration(c) && !isMoodCard(c),
+  );
   const [, setTick] = useState(0);
+  // 「贈る」導線の状態（接続ごとに1つだけ開く。選ぶ→確認→送信の2段階+結果）
+  type GiftState =
+    | { connId: string; stage: "pick" }
+    | { connId: string; stage: "confirm"; stampId: string }
+    | { connId: string; stage: "done" }
+    | { connId: string; stage: "error"; message: string };
+  const [gift, setGift] = useState<GiftState | null>(null);
+  const [giftBusy, setGiftBusy] = useState(false);
   // 「次にやること」の判定用: 有効な招待（送れる招待）があるか。
   // null = 取得前。ゲストは招待を作れないので判定対象外（true 扱いで読み込み待ちにしない）。
   const [hasValidInvite, setHasValidInvite] = useState<boolean | null>(
@@ -141,7 +174,90 @@ export default function HomePanel({
     }
   }
 
-  const today = dailyMessage(now);
+  // スタンプを贈る: トーク画面のスタンプ送信と全く同じ経路
+  // （最新ターンを取得 → judgeConnection で遅延評価 → checkSend で可否判定 →
+  //  turns へ insert → Push 通知）。エンジンの判定ロジック自体は変えない。
+  const sendGift = async (v: ConnView, stampId: string) => {
+    if (giftBusy) return;
+    setGiftBusy(true);
+    try {
+      const rules = rulesFor(me.gender, v.partner?.gender);
+      const turns = await selectRows<Turn>(
+        `turns?connection_id=eq.${v.conn.id}&order=created_at.asc&select=*`,
+      );
+      const judged = judgeConnection(v.conn, turns, rules);
+      let conn = v.conn;
+      if (judged.changed) {
+        conn = judged.connection;
+        await updateRows("connections", `id=eq.${v.conn.id}`, {
+          deadline: conn.deadline,
+          state: conn.state,
+        }).catch(() => undefined);
+        if (conn.state === "gone") {
+          setGift({
+            connId: v.conn.id,
+            stage: "error",
+            message: "この繋がりは終わっていました",
+          });
+          return;
+        }
+      }
+      const check = checkSend(conn, turns, session.userId, "stamp", rules);
+      if (!check.ok) {
+        setGift({ connId: v.conn.id, stage: "error", message: check.reason });
+        return;
+      }
+      await insertRow<Turn>("turns", {
+        connection_id: v.conn.id,
+        sender_id: session.userId,
+        kind: "stamp",
+        stamp_id: stampId,
+        body: null,
+      });
+      // スタンプ使用回数（端末ローカルのみ。トーク画面と同じキー・用途）
+      try {
+        const raw = window.localStorage.getItem("maasuu.stampUse.v1");
+        const parsed: unknown = raw ? JSON.parse(raw) : {};
+        const rec =
+          parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : {};
+        const cur = typeof rec[stampId] === "number" ? (rec[stampId] as number) : 0;
+        window.localStorage.setItem(
+          "maasuu.stampUse.v1",
+          JSON.stringify({ ...rec, [stampId]: cur + 1 }),
+        );
+      } catch {
+        // 保存できなくても贈る動作は止めない
+      }
+      // Web Push（fire-and-forget。失敗しても贈る動作は止めない。トーク画面と同じ）
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/push-notify`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: "Bearer " + session.accessToken,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ connection_id: v.conn.id }),
+        });
+      } catch {
+        // 通知の失敗は無視する
+      }
+      setGift({ connId: v.conn.id, stage: "done" });
+    } catch (e) {
+      console.error(e);
+      setGift({ connId: v.conn.id, stage: "error", message: "贈れませんでした" });
+    } finally {
+      setGiftBusy(false);
+    }
+  };
+
+  // 今日のマァスゥとラッキースタンプは同じ seed（日付＋自分のID）で決まる
+  const today = dailyMessage(me.id, now);
+  const myLucky = luckyStampFor(me.id, now);
+  // 今日の気分（自分のホームなので pub / priv の両方を出す。未設定なら誘導）
+  const myMood = resolveTodaysMood(cards, localDateKey(now), true);
 
   const footer = (
     <div className="text-center text-xs leading-relaxed text-balance">
@@ -185,26 +301,56 @@ export default function HomePanel({
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      {/* 1. 今日のマァスゥ（細い1行） */}
+      {/* 1. 今日のマァスゥ（細い1行）＋今日のラッキースタンプ */}
       <div className="shrink-0 px-4 pt-4">
         <section
-          className="flex items-baseline gap-2 rounded-full px-3.5 py-2 text-xs"
+          className="flex items-center gap-3 rounded-2xl px-3.5 py-2"
           style={{ background: "var(--accent-soft)" }}
         >
-          <span className="shrink-0 font-bold" style={{ color: "var(--accent-strong)" }}>
-            今日のマァスゥ
-          </span>
-          <span className="min-w-0 truncate" style={{ color: "var(--text)" }}>
-            マァ「{today.maa}」 スゥ「{today.suu}」
-          </span>
+          <div className="min-w-0 flex-1">
+            <span
+              className="block text-xs font-bold"
+              style={{ color: "var(--accent-strong)" }}
+            >
+              今日のマァスゥ
+            </span>
+            <span
+              className="block truncate text-xs"
+              style={{ color: "var(--text)" }}
+            >
+              マァ「{today.maa}」 スゥ「{today.suu}」
+            </span>
+          </div>
+          <div className="flex shrink-0 flex-col items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={myLucky.src}
+              alt={myLucky.label}
+              className="h-10 w-10 object-contain"
+            />
+            <span
+              className="mt-0.5 text-[9px] font-bold whitespace-nowrap"
+              style={{ color: "var(--accent-strong)" }}
+            >
+              今日のラッキースタンプ
+            </span>
+          </div>
         </section>
       </div>
 
-      {/* 2. 自分のカード（中心） */}
+      {/* 2. 自分のカード（中心）。ホームでは compact にして少し圧縮し、
+          下の「次にやること」まで一画面に入る高さに寄せる */}
       <ProfilePageView
         profile={me}
         cards={cards}
         footer={footer}
+        compact
+        mood={
+          myMood
+            ? { src: myMood.stamp.src, label: myMood.stamp.label }
+            : null
+        }
+        showMoodPrompt={!myMood}
         className="min-h-0 min-w-0 flex-1"
       />
 
@@ -225,12 +371,24 @@ export default function HomePanel({
                       ? `あと${v.quotaRoundTrips - v.roundTrips}回で${v.quotaRoundTrips}往復`
                       : `${v.quotaRoundTrips}往復達成`
                     : null;
+                // おそろい: 相手のラッキースタンプも同じ式で計算し、一致したら出す
+                const partnerId =
+                  v.conn.user_a === me.id ? v.conn.user_b : v.conn.user_a;
+                const osoroi =
+                  luckyStampFor(partnerId, now).id === myLucky.id;
+                // 贈る導線は期限が近い（残り24時間未満）相手だけに出す
+                const giftEligible = remainMs > 0 && remainMs < 24 * 3_600_000;
+                const g = gift && gift.connId === v.conn.id ? gift : null;
+                const giftStamp =
+                  g && g.stage === "confirm"
+                    ? STAMPS.find((s) => s.id === g.stampId)
+                    : null;
                 return (
                   <li key={v.conn.id}>
+                    <div className="rounded-2xl border" style={cardStyle}>
                     <Link
                       href={`/c/${v.conn.id}`}
-                      className="flex items-center gap-3 rounded-2xl border p-3"
-                      style={cardStyle}
+                      className="flex items-center gap-3 p-3"
                     >
                       {v.partner?.icon_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -262,6 +420,14 @@ export default function HomePanel({
                             {progress}
                           </span>
                         )}
+                        {osoroi && (
+                          <span
+                            className="block truncate text-[11px] font-bold"
+                            style={{ color: "var(--accent-strong)" }}
+                          >
+                            今日おそろい
+                          </span>
+                        )}
                       </span>
                       <span
                         className="shrink-0 text-xs font-bold"
@@ -270,6 +436,125 @@ export default function HomePanel({
                         残り {formatRemaining(remainMs)}
                       </span>
                     </Link>
+                    {giftEligible && (
+                      <div
+                        className="border-t px-3 py-2.5"
+                        style={{ borderColor: "var(--line)" }}
+                      >
+                        {!g ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGift({ connId: v.conn.id, stage: "pick" })
+                            }
+                            className="text-xs font-bold"
+                            style={{ color: "var(--accent-strong)" }}
+                          >
+                            スタンプを贈る
+                          </button>
+                        ) : g.stage === "pick" ? (
+                          <div>
+                            <div className="flex items-center justify-between gap-2">
+                              <p
+                                className="text-[11px]"
+                                style={{ color: "var(--muted)" }}
+                              >
+                                贈るスタンプをえらんでください
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setGift(null)}
+                                className="shrink-0 text-[11px] underline underline-offset-2"
+                                style={{ color: "var(--muted)" }}
+                              >
+                                やめる
+                              </button>
+                            </div>
+                            <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                              {STAMPS.map((s) => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  disabled={giftBusy}
+                                  onClick={() =>
+                                    setGift({
+                                      connId: v.conn.id,
+                                      stage: "confirm",
+                                      stampId: s.id,
+                                    })
+                                  }
+                                  aria-label={`スタンプ「${s.label}」を贈る`}
+                                  className="h-12 w-12 shrink-0 rounded-lg border p-1 disabled:opacity-40"
+                                  style={{
+                                    borderColor: "var(--line)",
+                                    background: "var(--surface)",
+                                  }}
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={s.src}
+                                    alt={s.label}
+                                    className="h-full w-full object-contain"
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : g.stage === "confirm" ? (
+                          <div className="flex items-center gap-3">
+                            {giftStamp && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={giftStamp.src}
+                                alt={giftStamp.label}
+                                className="h-11 w-11 shrink-0 object-contain"
+                              />
+                            )}
+                            <p className="min-w-0 flex-1 text-xs">
+                              このスタンプを贈りますか？
+                            </p>
+                            <button
+                              type="button"
+                              disabled={giftBusy}
+                              onClick={() =>
+                                g.stage === "confirm" &&
+                                sendGift(v, g.stampId)
+                              }
+                              className="shrink-0 rounded-full px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                              style={{ background: "var(--accent)" }}
+                            >
+                              贈る
+                            </button>
+                            <button
+                              type="button"
+                              disabled={giftBusy}
+                              onClick={() =>
+                                setGift({ connId: v.conn.id, stage: "pick" })
+                              }
+                              className="shrink-0 text-[11px] underline underline-offset-2 disabled:opacity-50"
+                              style={{ color: "var(--muted)" }}
+                            >
+                              もどる
+                            </button>
+                          </div>
+                        ) : g.stage === "done" ? (
+                          <p
+                            className="text-xs font-bold"
+                            style={{ color: "var(--accent-strong)" }}
+                          >
+                            贈りました
+                          </p>
+                        ) : (
+                          <p
+                            className="text-xs"
+                            style={{ color: "var(--muted)" }}
+                          >
+                            {g.message}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    </div>
                   </li>
                 );
               })}

@@ -33,6 +33,7 @@ import HourglassIcon, { DEADLINE_WARN_COLOR } from "../../hourglass-icon";
 import { genreLabel } from "../../../lib/genres";
 import { hideConnection } from "../../../lib/hidden";
 import { STAMPS, stampSrc, suggestStamps } from "../../../lib/stamps";
+import { luckyStampFor } from "../../../lib/lucky";
 import {
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
@@ -284,6 +285,12 @@ export default function TalkClient() {
   const partnerOk = conn.user_a === session.userId ? conn.text_ok_b : conn.text_ok_a;
   // 入力連動サジェスト: テキスト入力がある時だけ、入力文に合うスタンプを候補に出す
   const stampSuggestions = textOk ? suggestStamps(text) : [];
+  // 今日おそろい: 自分と相手のラッキースタンプ（日付＋IDの決定的計算）が
+  // 一致する日だけ、ヘッダーに小さく出す（ホームの楽しさ第1段）
+  const osoroiToday =
+    !finished &&
+    partner !== null &&
+    luckyStampFor(session.userId, now).id === luckyStampFor(partner.id, now).id;
 
   // Web Push: 送信できたら相手へ通知を投げる（fire-and-forget。失敗しても送信フローは止めない）
   const notifyPush = async () => {
@@ -438,6 +445,17 @@ export default function TalkClient() {
             <p className="min-w-0 flex-1 truncate text-sm font-bold">
               {partner?.display_name ?? "相手"}
             </p>
+            {osoroiToday && (
+              <span
+                className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                style={{
+                  background: "var(--accent-soft)",
+                  color: "var(--accent-strong)",
+                }}
+              >
+                今日おそろい
+              </span>
+            )}
             <div className="flex shrink-0 flex-col items-end gap-1">
             <button
               type="button"

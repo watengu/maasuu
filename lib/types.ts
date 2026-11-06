@@ -58,13 +58,59 @@ export type ProfileCard = {
  */
 export const STAMP_DECORATION_PATH = /^\/stamps\/stamp-\d+\.png$/;
 
-export function isStampDecoration(
-  card: Pick<ProfileCard, "kind" | "image_url">,
+/**
+ * 今日の気分スタンプ（ホームの楽しさ第1段）: その日限りの気分を1つ置く。
+ * 飾りと同じ kind='picture' + image_url=スタンプの実パスの形で保存するが、
+ * 飾り行では未使用の description に `mood:YYYY-MM-DD:pub`（公開）または
+ * `mood:YYYY-MM-DD:priv`（非公開）を持たせて区別する。日付は保存した端末の
+ * ローカル日付。表示側は日付が「今日」の行だけを気分として扱う。
+ */
+export type MoodVisibility = "pub" | "priv";
+
+export type MoodInfo = {
+  /** ローカル日付 YYYY-MM-DD */
+  date: string;
+  visibility: MoodVisibility;
+};
+
+const MOOD_DESCRIPTION_RE = /^mood:(\d{4}-\d{2}-\d{2}):(pub|priv)$/;
+
+/** description が気分の印なら { date, visibility } を返す（違えば null） */
+export function parseMoodDescription(
+  description: string | null | undefined,
+): MoodInfo | null {
+  if (!description) return null;
+  const m = MOOD_DESCRIPTION_RE.exec(description);
+  if (!m) return null;
+  return { date: m[1], visibility: m[2] as MoodVisibility };
+}
+
+/** 気分の保存形式（description の値）を作る */
+export function moodDescription(date: string, visibility: MoodVisibility): string {
+  return `mood:${date}:${visibility}`;
+}
+
+/** この行が「今日の気分」の行か（飾り・通常カードとは分けて扱う） */
+export function isMoodCard(
+  card: Pick<ProfileCard, "kind" | "image_url" | "description">,
 ): boolean {
   return (
     normalizeCardKind(card.kind) === "picture" &&
     card.image_url !== null &&
-    STAMP_DECORATION_PATH.test(card.image_url)
+    STAMP_DECORATION_PATH.test(card.image_url) &&
+    parseMoodDescription(card.description) !== null
+  );
+}
+
+export function isStampDecoration(
+  card: Pick<ProfileCard, "kind" | "image_url" | "description">,
+): boolean {
+  return (
+    normalizeCardKind(card.kind) === "picture" &&
+    card.image_url !== null &&
+    STAMP_DECORATION_PATH.test(card.image_url) &&
+    // 気分行も同じ形（picture + スタンプパス）なので、飾りからは除外する
+    parseMoodDescription(card.description) === null
   );
 }
 

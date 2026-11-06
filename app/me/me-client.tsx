@@ -42,7 +42,15 @@ import type {
   ProfileCard,
   ProfileCardKind,
 } from "../../lib/types";
-import { isStampDecoration, normalizeCardKind } from "../../lib/types";
+import {
+  isMoodCard,
+  isStampDecoration,
+  moodDescription,
+  normalizeCardKind,
+  parseMoodDescription,
+  type MoodVisibility,
+} from "../../lib/types";
+import { localDateKey } from "../../lib/lucky";
 
 const CARD_KIND_LABEL: Record<ProfileCardKind, string> = {
   button: "ボタン",
@@ -90,6 +98,12 @@ export default function MeClient() {
   // 保存までは下書きとして持ち、ライブプレビューにも即反映する。
   const [decoSel, setDecoSel] = useState<string[]>([]);
 
+  // 今日の気分: 選択中のスタンプ（src。null=未設定）と公開範囲の下書き。
+  // 保存済みの気分行の日付（古い気分の注意書き用。null=保存済みの気分なし）。
+  const [moodSel, setMoodSel] = useState<string | null>(null);
+  const [moodVis, setMoodVis] = useState<MoodVisibility>("pub");
+  const [moodSavedDate, setMoodSavedDate] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const s = await getSession();
     if (!s) {
@@ -134,6 +148,15 @@ export default function MeClient() {
         .map((c) => c.image_url ?? "")
         .filter(Boolean),
     );
+    // 気分の下書きは保存済みの気分行で初期化する（日付が古くても、選び直して
+    // 保存すれば今日の気分として置き換わる）
+    const savedMood = cs.find((c) => isMoodCard(c));
+    const savedMoodInfo = savedMood
+      ? parseMoodDescription(savedMood.description)
+      : null;
+    setMoodSel(savedMood?.image_url ?? null);
+    setMoodVis(savedMoodInfo?.visibility ?? "pub");
+    setMoodSavedDate(savedMoodInfo?.date ?? null);
     setSets(ss);
     const joinedIds = Array.from(
       new Set(
@@ -189,7 +212,10 @@ export default function MeClient() {
 
   // スタンプ飾りと通常カードは分けて扱う（飾りは通常一覧・並び替えの対象外。
   // sort は飾り同士／通常カード同士の中でそれぞれ通し番号として使う）。
-  const normalCards = cards.filter((c) => !isStampDecoration(c));
+  // 気分行も通常カードには混ぜない（気分セクションだけで扱う）。
+  const normalCards = cards.filter(
+    (c) => !isStampDecoration(c) && !isMoodCard(c),
+  );
   const savedDecos = cards
     .filter(isStampDecoration)
     .slice()
@@ -376,6 +402,45 @@ export default function MeClient() {
     }
   };
 
+  // 今日の気分の選択／解除（下書き。1つだけ。再タップで解除）
+  const toggleMood = (src: string) => {
+    setMoodSel((prev) => (prev === src ? null : src));
+  };
+
+  // 気分の保存: 気分行だけを対象にする（既存の気分行は日付が古いものも含めて
+  // すべて置き換える。飾り・通常カードには触らない）。
+  // 日付はこの端末のローカル日付で、表示側は「今日」の行だけを出す。
+  const saveMood = async () => {
+    setBusy(true);
+    setNotice("");
+    try {
+      for (const c of cards.filter(isMoodCard)) {
+        await deleteRows("profile_cards", `id=eq.${c.id}`);
+      }
+      if (moodSel) {
+        const stamp = STAMPS.find((s) => s.src === moodSel);
+        await insertRow<ProfileCard>("profile_cards", {
+          user_id: session.userId,
+          kind: "picture",
+          title: stamp?.label ?? "",
+          url: null,
+          image_url: moodSel,
+          description: moodDescription(localDateKey(), moodVis),
+          sort: 0,
+        });
+      }
+      setNotice(
+        moodSel ? "今日の気分を保存しました。" : "今日の気分を外しました。",
+      );
+      await load();
+    } catch (e) {
+      console.error(e);
+      setNotice("気分を保存できませんでした。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // 橋渡しセット（リンク2本）の作成は運営のみ（Ao 決定 2026-10-28: ユーザーは橋渡ししない）。
   const createSet = async () => {
     if (!canCreateSet || !me.is_operator) return;
@@ -552,6 +617,15 @@ export default function MeClient() {
                 cards={previewCards}
                 compact
                 className="h-full"
+                mood={
+                  moodSel
+                    ? {
+                        src: moodSel,
+                        label:
+                          STAMPS.find((s) => s.src === moodSel)?.label ?? "",
+                      }
+                    : null
+                }
               />
             </div>
           </div>
@@ -841,6 +915,91 @@ export default function MeClient() {
             style={{ background: "var(--accent)" }}
           >
             飾りを保存する
+          </button>
+        </section>
+
+        <section className={sectionCls} style={sectionStyle}>
+          <h2 className="text-sm font-bold">今日の気分</h2>
+          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+            スタンプを1つ選ぶと、今日だけあなたのページの先頭に出ます。
+            日付が変わると自動で出なくなります。飾り（ずっと置くもの）とは別のものです。
+          </p>
+          <div className="mt-3 grid grid-cols-4 gap-2">
+            {STAMPS.map((s) => {
+              const selected = moodSel === s.src;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => toggleMood(s.src)}
+                  aria-pressed={selected}
+                  aria-label={`今日の気分に「${s.label}」を${selected ? "外す" : "選ぶ"}`}
+                  className="relative rounded-xl border p-1.5 disabled:opacity-40"
+                  style={
+                    selected
+                      ? {
+                          borderColor: "var(--accent)",
+                          background: "var(--accent-soft)",
+                        }
+                      : { borderColor: "var(--line)", background: "var(--surface)" }
+                  }
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={s.src} alt={s.label} className="mx-auto h-14 w-14 object-contain" />
+                  <span className="mt-0.5 block truncate text-center text-[10px]">
+                    {s.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-3 text-xs font-bold">見せる範囲</p>
+          <div className="mt-2 flex gap-2">
+            {(
+              [
+                ["pub", "公開ページでも出す"],
+                ["priv", "自分のホームだけ"],
+              ] as [MoodVisibility, string][]
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                disabled={busy}
+                onClick={() => setMoodVis(v)}
+                aria-pressed={moodVis === v}
+                className="flex-1 rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+                style={
+                  moodVis === v
+                    ? {
+                        borderColor: "var(--accent)",
+                        background: "var(--accent-soft)",
+                        color: "var(--accent-strong)",
+                        fontWeight: 700,
+                      }
+                    : { borderColor: "var(--line)", background: "var(--surface)" }
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
+            公開ページがオフのときは、「公開ページでも出す」を選んでも公開ページ自体は出ません。
+          </p>
+          {moodSavedDate && moodSavedDate !== localDateKey() && (
+            <p className="mt-2 text-[11px]" style={{ color: "var(--muted)" }}>
+              いま保存されているのは {moodSavedDate} の気分です。保存すると今日の気分になります。
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={saveMood}
+            className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-50"
+            style={{ background: "var(--accent)" }}
+          >
+            {moodSel ? "気分を保存する" : "気分を外して保存する"}
           </button>
         </section>
 

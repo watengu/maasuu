@@ -1,6 +1,10 @@
 // 「今日のマァスゥ」: マァとスゥの日替わりひとこと（段階2・設計 §3）。
-// 固定の文案セットを日付で回すだけ。サーバー不要・端末内で完結する。
+// 固定の文案セットから1件選ぶだけ。サーバー不要・端末内で完結する。
 // アプリ内は日本語のみ（スゥの台詞も日本語）。日常の短い一言に限る。
+// 選択は「今日のラッキースタンプ」と同じ seed（ローカル日付＋ユーザーIDの
+// ハッシュ）を使い、seed % 文案数 で決める（ホームの楽しさ第1段の連動）。
+
+import { localDateKey, luckySeedFor } from "./lucky";
 
 export type DailyMessage = {
   maa: string;
@@ -24,13 +28,9 @@ export const DAILY_MESSAGES: DailyMessage[] = [
   { maa: "明日は明日の楽しみがあるね。", suu: "うん。今日は今日で、よかった。" },
 ];
 
-// 端末のローカル日付で1件選ぶ（同じ日は同じ文案）。
-export function dailyMessage(now: Date = new Date()): DailyMessage {
-  const dayIndex = Math.floor(
-    Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000,
-  );
-  const idx =
-    ((dayIndex % DAILY_MESSAGES.length) + DAILY_MESSAGES.length) %
-    DAILY_MESSAGES.length;
-  return DAILY_MESSAGES[idx];
+// ラッキースタンプと同じ seed（日付＋ユーザーID）で1件選ぶ。
+// 同じ日・同じユーザーでは常に同じ文案になる。
+export function dailyMessage(userId: string, now: Date = new Date()): DailyMessage {
+  const seed = luckySeedFor(userId, localDateKey(now));
+  return DAILY_MESSAGES[seed % DAILY_MESSAGES.length];
 }

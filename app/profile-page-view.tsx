@@ -10,8 +10,9 @@
 // cover_url（写真）＞ テーマシーン ＞ default。
 // リンクカードは URL から SNS を自動判定し、アイコン行とボタンに反映する。
 import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
 import type { Profile, ProfileCard } from "../lib/types";
-import { isStampDecoration, normalizeCardKind } from "../lib/types";
+import { isMoodCard, isStampDecoration, normalizeCardKind } from "../lib/types";
 
 /** 背景テーマシーン（profiles.theme にキーを保存。cover_url がある場合はそちらが優先） */
 export type ProfileTheme = {
@@ -373,6 +374,8 @@ export default function ProfilePageView({
   footer,
   compact = false,
   className,
+  mood = null,
+  showMoodPrompt = false,
 }: {
   profile: Profile;
   cards: ProfileCard[];
@@ -381,6 +384,17 @@ export default function ProfilePageView({
   /** 設定画面のライブプレビュー用に余白とアイコンを詰める */
   compact?: boolean;
   className?: string;
+  /**
+   * 今日の気分（ホームの楽しさ第1段）。日付が「今日」の気分行だけを、
+   * 呼び出し側が可視判定（自分の画面か／公開か）まで済ませて渡す。
+   * 内容エリアの先頭に「今日の気分」枠として描く。
+   */
+  mood?: { src: string; label: string } | null;
+  /**
+   * 自分のホームで今日の気分が未設定のときだけ true。
+   * 気分枠の位置に「今日の気分は？」と設定への静かな誘導を出す。
+   */
+  showMoodPrompt?: boolean;
 }) {
   const sceneKey = resolveThemeKey(profile.theme);
   const theme = PROFILE_THEMES[sceneKey];
@@ -399,7 +413,11 @@ export default function ProfilePageView({
     .slice()
     .sort((a, b) => a.sort - b.sort || a.id - b.id)
     .slice(0, 3);
-  const visibleCards = cards.filter((c) => !isStampDecoration(c));
+  // 気分行は通常カードにも飾りにも数えない（気分枠として別に描く）
+  const visibleCards = cards.filter(
+    (c) => !isStampDecoration(c) && !isMoodCard(c),
+  );
+  const hasMoodArea = mood !== null || showMoodPrompt;
 
   // SNS アイコン行: リンクカードからサービスごとに最初の1件を抽出する
   const snsRow: { service: SnsService; url: string }[] = [];
@@ -509,8 +527,69 @@ export default function ProfilePageView({
           </div>
         )}
 
+        {/* 今日の気分（内容エリアの先頭）。気分がある日だけ枠が出る。
+            自分のホームで未設定なら、枠の位置に静かな誘導を出す */}
+        {mood ? (
+          <div
+            className={`flex items-center gap-3 rounded-[20px] px-4 py-3 backdrop-blur-md ${compact ? "mt-5" : "mt-7"}`}
+            style={
+              dark
+                ? {
+                    background: "rgba(255, 246, 233, 0.18)",
+                    border: "1px solid rgba(255, 255, 255, 0.25)",
+                  }
+                : {
+                    background: "rgba(255, 255, 255, 0.55)",
+                    border: "1px solid rgba(70, 40, 30, 0.08)",
+                  }
+            }
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mood.src}
+              alt=""
+              className="h-12 w-12 shrink-0 object-contain"
+            />
+            <span className="min-w-0">
+              <span className="block text-[10px] font-bold tracking-[0.14em] opacity-80">
+                今日の気分
+              </span>
+              <span className="block truncate text-sm font-bold">{mood.label}</span>
+            </span>
+          </div>
+        ) : showMoodPrompt ? (
+          <Link
+            href="/me"
+            className={`flex items-center gap-3 rounded-[20px] px-4 py-3 backdrop-blur-md ${compact ? "mt-5" : "mt-7"}`}
+            style={
+              dark
+                ? {
+                    background: "rgba(255, 246, 233, 0.12)",
+                    border: "1px dashed rgba(255, 255, 255, 0.3)",
+                  }
+                : {
+                    background: "rgba(255, 255, 255, 0.4)",
+                    border: "1px dashed rgba(70, 40, 30, 0.15)",
+                  }
+            }
+          >
+            <span className="min-w-0">
+              <span className="block text-sm font-bold">今日の気分は？</span>
+              <span className="block text-[11px] opacity-80">
+                スタンプを1つ置けます
+              </span>
+            </span>
+          </Link>
+        ) : null}
+
         {visibleCards.length > 0 ? (
-          <ul className={`${compact ? "mt-5 space-y-2.5" : "mt-7 space-y-3"}`}>
+          <ul
+            className={
+              hasMoodArea
+                ? `${compact ? "mt-4 space-y-2.5" : "mt-5 space-y-3"}`
+                : `${compact ? "mt-5 space-y-2.5" : "mt-7 space-y-3"}`
+            }
+          >
             {visibleCards.map((c) => {
               const kind = normalizeCardKind(c.kind);
               if (kind === "button" && c.url) {
@@ -701,7 +780,8 @@ export default function ProfilePageView({
               );
             })}
           </ul>
-        ) : (
+        ) : hasMoodArea ? null : (
+          // 内容が空でも気分枠（または誘導）が出ているときは、空き文案は出さない
           <p className="mt-7 text-center text-xs text-balance opacity-85">
             ホームに載せる内容はまだありません。
           </p>
