@@ -1,13 +1,16 @@
 "use client";
 
 // ホームパネル（スライドシェルの右パネル）: 自分のページ。
-// 段階2（設計 §3）で上部に3つのブロックを追加した。上から順に:
-//   1. いまの繋がり（有効な繋がりを期限が近い順に最大3件。ゼロ件なら出さない）
-//   2. 次にやること（状態に応じて1つだけ）
-//   3. 今日のマァスゥ（マァとスゥの日替わりひとこと。端末内で完結）
-//   4. 自分のカード（従来のプロフィール表示をそのまま下に残す）
+// 段階2調整で並びを組み替えた。上から順に:
+//   1. 今日のマァスゥ（マァとスゥの日替わりひとこと。細い1行。端末内で完結）
+//   2. 自分のカード（中心。従来のプロフィール表示）
+//   3. いまの繋がり（有効な繋がりを期限が近い順に最大3件。ゼロ件なら出さない）
+//   4. 次にやること（状態に応じて1つだけ。分岐ロジックは段階2のまま、
+//      紹介への遷移先だけ専用ページ /invite に更新）
 // 「いまの繋がり」のデータはシェルが取得した ConnView をそのまま使い、
 // 期限・往復の判定は lib/engine の既存ロジック（シェル側で計算済みの値）に従う。
+// スタンプ飾り（isStampDecoration）は「カード」には数えない（飾りは
+// ProfilePageView が浮く飾りとして描き分ける）。
 // 公開ページ（/p/[code]）と同じ見た目（ProfilePageView）で、自分のアイコン・名前・
 // 一言・カードを表示する。promo_on の有無にかかわらず本人には常に見える
 // （promo_on は「他人から /p で見えるか」だけを決める）。
@@ -26,6 +29,7 @@ import { dailyMessage } from "../lib/daily-message";
 import { loadHidden } from "../lib/hidden";
 import { selectRows } from "../lib/supabase";
 import type { IntroSet, Profile, ProfileCard } from "../lib/types";
+import { isStampDecoration } from "../lib/types";
 
 // 運営セットの失効（72時間）は invite-section / /me と同じ条件。
 const SET_EXPIRE_MS = 72 * 60 * 60 * 1000;
@@ -35,14 +39,14 @@ export default function HomePanel({
   me,
   cards,
   views,
-  onGoInvite,
 }: {
   session: Session;
   me: Profile;
   cards: ProfileCard[];
   views: ConnView[] | null;
-  onGoInvite: () => void;
 }) {
+  // スタンプ飾りを除いた通常カード（「カード未登録」の判定と footer の出し分け用）
+  const normalCards = cards.filter((c) => !isStampDecoration(c));
   const [, setTick] = useState(0);
   // 「次にやること」の判定用: 有効な招待（送れる招待）があるか。
   // null = 取得前。ゲストは招待を作れないので判定対象外（true 扱いで読み込み待ちにしない）。
@@ -99,41 +103,37 @@ export default function HomePanel({
   // 次にやること（1つだけ）。優先順は設計 §3:
   // カード未登録 → プロフィールカードを作る／有効な招待が無い → 紹介を作る／
   // 期限24時間未満の繋がりあり → トークを開く／どれでもない → 紹介を作る。
-  type NextAction =
-    | { kind: "link"; label: string; note: string; href: string }
-    | { kind: "invite"; label: string; note: string };
+  // 「カード未登録」はスタンプ飾りを除いた通常カードで判定する。
+  type NextAction = { label: string; note: string; href: string };
   let nextAction: NextAction | null = null;
   if (views !== null && hasValidInvite !== null) {
-    if (cards.length === 0) {
+    if (normalCards.length === 0) {
       nextAction = {
-        kind: "link",
         label: "プロフィールカードを作る",
         note: "リンクや短い文を並べると、あなたのページが伝わりやすくなります。",
         href: "/me",
       };
     } else if (!me.is_guest && hasValidInvite === false) {
       nextAction = {
-        kind: "invite",
         label: "紹介を作る",
         note: "送れる招待がありません。新しい招待を作って相手に渡しましょう。",
+        href: "/invite",
       };
     } else if (urgent) {
       nextAction = {
-        kind: "link",
         label: "トークを開く",
         note: `${urgent.partner?.display_name ?? "相手"} さんとの繋がりの期限が近づいています（残り ${formatRemaining(remainingMs(urgent.conn, now))}）。`,
         href: `/c/${urgent.conn.id}`,
       };
     } else if (!me.is_guest) {
       nextAction = {
-        kind: "invite",
         label: "紹介を作る",
         note: "招待を作って、新しい繋がりを始めましょう。",
+        href: "/invite",
       };
     } else if (activeViews.length > 0) {
       // ゲストは招待を作れないので、既存の繋がりへ誘導する。
       nextAction = {
-        kind: "link",
         label: "トークを開く",
         note: `${activeViews[0].partner?.display_name ?? "相手"} さんとのトークを開きます。`,
         href: `/c/${activeViews[0].conn.id}`,
@@ -145,7 +145,7 @@ export default function HomePanel({
 
   const footer = (
     <div className="text-center text-xs leading-relaxed text-balance">
-      {cards.length === 0 && (
+      {normalCards.length === 0 && (
         <p className="opacity-85">
           リンクや短い文を並べて、あなたのページと公開ページに出すものです。
           <Link href="/me" className="underline underline-offset-2">
@@ -156,13 +156,13 @@ export default function HomePanel({
       )}
       {!me.is_guest &&
         (me.promo_on && me.promo_code ? (
-          <p className={cards.length === 0 ? "mt-3" : undefined}>
+          <p className={normalCards.length === 0 ? "mt-3" : undefined}>
             <Link href={`/p/${me.promo_code}`} className="underline underline-offset-2">
               公開ページを見る
             </Link>
           </p>
         ) : (
-          <p className={cards.length === 0 ? "mt-3" : undefined}>
+          <p className={normalCards.length === 0 ? "mt-3" : undefined}>
             公開ページはOFFです。
             <Link href="/me" className="underline underline-offset-2">
               設定
@@ -185,8 +185,32 @@ export default function HomePanel({
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="shrink-0 space-y-4 px-4 py-5">
-        {/* 1. いまの繋がり（ゼロ件なら出さない） */}
+      {/* 1. 今日のマァスゥ（細い1行） */}
+      <div className="shrink-0 px-4 pt-4">
+        <section
+          className="flex items-baseline gap-2 rounded-full px-3.5 py-2 text-xs"
+          style={{ background: "var(--accent-soft)" }}
+        >
+          <span className="shrink-0 font-bold" style={{ color: "var(--accent-strong)" }}>
+            今日のマァスゥ
+          </span>
+          <span className="min-w-0 truncate" style={{ color: "var(--text)" }}>
+            マァ「{today.maa}」 スゥ「{today.suu}」
+          </span>
+        </section>
+      </div>
+
+      {/* 2. 自分のカード（中心） */}
+      <ProfilePageView
+        profile={me}
+        cards={cards}
+        footer={footer}
+        className="min-h-0 min-w-0 flex-1"
+      />
+
+      {(activeViews.length > 0 || nextAction) && (
+        <div className="shrink-0 space-y-4 px-4 py-4">
+        {/* 3. いまの繋がり（ゼロ件なら出さない） */}
         {views !== null && activeViews.length > 0 && (
           <section>
             <h2 className="text-sm font-bold" style={{ color: "var(--muted)" }}>
@@ -253,7 +277,7 @@ export default function HomePanel({
           </section>
         )}
 
-        {/* 2. 次にやること */}
+        {/* 4. 次にやること */}
         {nextAction && (
           <section className="rounded-2xl border p-4" style={cardStyle}>
             <h2 className="text-sm font-bold" style={{ color: "var(--muted)" }}>
@@ -262,59 +286,18 @@ export default function HomePanel({
             <p className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
               {nextAction.note}
             </p>
-            {nextAction.kind === "link" ? (
-              <Link
-                href={nextAction.href}
-                className="mt-3 block rounded-full py-2.5 text-center text-sm font-bold text-white"
-                style={{ background: "var(--accent)" }}
-              >
-                {nextAction.label}
-              </Link>
-            ) : (
-              <button
-                type="button"
-                onClick={onGoInvite}
-                className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white"
-                style={{ background: "var(--accent)" }}
-              >
-                {nextAction.label}
-              </button>
-            )}
+            <Link
+              href={nextAction.href}
+              className="mt-3 block rounded-full py-2.5 text-center text-sm font-bold text-white"
+              style={{ background: "var(--accent)" }}
+            >
+              {nextAction.label}
+            </Link>
           </section>
         )}
 
-        {/* 3. 今日のマァスゥ */}
-        <section
-          className="rounded-2xl border p-4"
-          style={{ borderColor: "var(--line)", background: "var(--accent-soft)" }}
-        >
-          <h2 className="text-sm font-bold" style={{ color: "var(--accent-strong)" }}>
-            今日のマァスゥ
-          </h2>
-          <div className="mt-2 space-y-1.5 text-sm leading-relaxed">
-            <p>
-              <span className="mr-2 text-xs font-bold" style={{ color: "var(--accent-strong)" }}>
-                マァ
-              </span>
-              {today.maa}
-            </p>
-            <p>
-              <span className="mr-2 text-xs font-bold" style={{ color: "var(--accent-strong)" }}>
-                スゥ
-              </span>
-              {today.suu}
-            </p>
-          </div>
-        </section>
-      </div>
-
-      {/* 4. 自分のカード（従来のプロフィール表示） */}
-      <ProfilePageView
-        profile={me}
-        cards={cards}
-        footer={footer}
-        className="min-h-0 min-w-0 flex-1"
-      />
+        </div>
+      )}
     </div>
   );
 }

@@ -22,6 +22,9 @@ export default function AppHeader() {
           <Link href="/" className="underline-offset-2 hover:underline">
             つながり
           </Link>
+          <Link href="/invite" className="underline-offset-2 hover:underline">
+            紹介
+          </Link>
           <Link href="/me" className="underline-offset-2 hover:underline">
             設定
           </Link>

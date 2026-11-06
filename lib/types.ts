@@ -50,6 +50,24 @@ export type ProfileCard = {
   created_at: string;
 };
 
+/**
+ * スタンプ飾り（段階2調整）: 自分のページに浮く飾りとして置くスタンプ。
+ * DB の CHECK 制約は kind を 'button'/'picture'/'text' に限るため、新しい kind は
+ * 作らず、kind='picture' + image_url が内蔵スタンプの実パス、という形で保存する。
+ * title=スタンプのラベル、url=null、description=null、sort=飾りの順序。
+ */
+export const STAMP_DECORATION_PATH = /^\/stamps\/stamp-\d+\.png$/;
+
+export function isStampDecoration(
+  card: Pick<ProfileCard, "kind" | "image_url">,
+): boolean {
+  return (
+    normalizeCardKind(card.kind) === "picture" &&
+    card.image_url !== null &&
+    STAMP_DECORATION_PATH.test(card.image_url)
+  );
+}
+
 /** 紹介セットのジャンル（rule 17: 固定リストのみ） */
 export type Genre = "beauty" | "game" | "oshi" | "work" | "love_talk" | "chat";
 

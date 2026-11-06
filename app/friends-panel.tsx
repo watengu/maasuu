@@ -89,11 +89,21 @@ export default function FriendsPanel({
           <p>まだ繋がりがありません。</p>
           <p className="mt-2">
             マァスゥの繋がりは、紹介から生まれます。
-            {me.is_guest
-              ? "招待が届くと、ここに繋がりが表示されます。"
-              : me.is_operator
-                ? "下の「紹介」タブから招待リンクを作って、相手に渡してください。"
-                : "下の「紹介」タブから招待リンクを作って、相手に渡してください（作成は3日に1回まで）。"}
+            {me.is_guest ? (
+              "招待が届くと、ここに繋がりが表示されます。"
+            ) : (
+              <>
+                <Link
+                  href="/invite"
+                  className="font-bold underline underline-offset-2"
+                  style={{ color: "var(--accent-strong)" }}
+                >
+                  紹介ページ
+                </Link>
+                から招待リンクを作って、相手に渡してください
+                {me.is_operator ? "。" : "（作成は3日に1回まで）。"}
+              </>
+            )}
           </p>
         </div>
       ) : (

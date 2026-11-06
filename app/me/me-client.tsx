@@ -1,9 +1,13 @@
 "use client";
 
-// 設定画面: プロフィール編集（基本情報 / ホームに載せる内容の追加・削除）/ 公開ページ ON・OFF と URL /
-// 招待の作成（段階2・設計 §2: 一般ユーザーの招待作成は紹介タブへ一本化し、ここには残さない。
+// 設定画面: プロフィール編集（基本情報 / ホームに載せる内容の追加・削除 / カードを飾る）/
+// 公開ページ ON・OFF と URL /
+// 招待の作成（段階2調整: 一般ユーザーの招待作成は専用ページ /invite にあり、ここには残さない。
 // 橋渡し = リンク2本で2人を繋ぐ形の作成は運営のみ、ここに残す。ジャンル必須。
 // クールダウン = 一般ユーザーは前回作成から3日、運営は無制限。Ao 決定 2026-10-28）。
+// カードを飾る（段階2調整）: スタンプ飾りは profile_cards に kind='picture' +
+// image_url=/stamps/stamp-XX.png の形で保存する（isStampDecoration で判別）。
+// 通常カードの一覧・並び替えには混ぜず、飾りだけを対象に insert/delete する。
 // 自分のページの見た目はトップ（ホームパネル）と公開ページ側が担い、ここは設定に専念する。
 // 基本情報セクションの先頭には ProfilePageView のライブプレビューを置き、
 // 入力・テーマ選択・カード並び替えがその場で仕上がりに反映される（第4弾 2026-10-29）。
@@ -29,6 +33,7 @@ import {
 import LinkActions from "../link-actions";
 import ProfilePageView, { PROFILE_THEMES } from "../profile-page-view";
 import PushSection from "./push-section";
+import { STAMPS } from "../../lib/stamps";
 import type {
   Gender,
   Genre,
@@ -37,7 +42,7 @@ import type {
   ProfileCard,
   ProfileCardKind,
 } from "../../lib/types";
-import { normalizeCardKind } from "../../lib/types";
+import { isStampDecoration, normalizeCardKind } from "../../lib/types";
 
 const CARD_KIND_LABEL: Record<ProfileCardKind, string> = {
   button: "ボタン",
@@ -81,6 +86,10 @@ export default function MeClient() {
   const [cardImageUrl, setCardImageUrl] = useState("");
   const [cardDescription, setCardDescription] = useState("");
 
+  // カードを飾る: 選択中のスタンプ（src の配列。並び＝配置順。最大3点）。
+  // 保存までは下書きとして持ち、ライブプレビューにも即反映する。
+  const [decoSel, setDecoSel] = useState<string[]>([]);
+
   const load = useCallback(async () => {
     const s = await getSession();
     if (!s) {
@@ -116,6 +125,15 @@ export default function MeClient() {
       ),
     ]);
     setCards(cs);
+    // 飾りの下書きは保存済みの飾り（sort 順＝選択順）で初期化する
+    setDecoSel(
+      cs
+        .filter(isStampDecoration)
+        .slice()
+        .sort((a, b) => a.sort - b.sort || a.id - b.id)
+        .map((c) => c.image_url ?? "")
+        .filter(Boolean),
+    );
     setSets(ss);
     const joinedIds = Array.from(
       new Set(
@@ -168,6 +186,14 @@ export default function MeClient() {
   const cooldownMs = introCooldownRemainingMs(lastSetAt);
   // 運営アカウントには本数縛り（クールダウン）を適用しない（Ao 指示 2026-10-28）。
   const canCreateSet = (me.is_operator || cooldownMs <= 0) && !me.is_guest;
+
+  // スタンプ飾りと通常カードは分けて扱う（飾りは通常一覧・並び替えの対象外。
+  // sort は飾り同士／通常カード同士の中でそれぞれ通し番号として使う）。
+  const normalCards = cards.filter((c) => !isStampDecoration(c));
+  const savedDecos = cards
+    .filter(isStampDecoration)
+    .slice()
+    .sort((a, b) => a.sort - b.sort || a.id - b.id);
 
   const saveProfile = async () => {
     setBusy(true);
@@ -239,7 +265,7 @@ export default function MeClient() {
         url: url || null,
         image_url: cardKind === "picture" ? imageUrl || null : null,
         description: cardKind === "button" ? null : cardDescription.trim() || null,
-        sort: cards.length,
+        sort: normalCards.length,
       });
       setCardTitle("");
       setCardUrl("");
@@ -268,16 +294,18 @@ export default function MeClient() {
     }
   };
 
-  // カードの並び替え: ローカル state を入れ替えてプレビューへ即反映し、
-  // sort を通し番号に付け替えて保存する（既存の保存方式＝updateRows に合わせる）。
+  // カードの並び替え: 通常カードの中だけで入れ替える（飾りの sort には触らない）。
+  // ローカル state を入れ替えてプレビューへ即反映し、sort を通し番号に付け替えて
+  // 保存する（既存の保存方式＝updateRows に合わせる）。
   const moveCard = async (index: number, dir: -1 | 1) => {
     const target = index + dir;
-    if (target < 0 || target >= cards.length) return;
-    const origSort = new Map(cards.map((c) => [c.id, c.sort]));
-    const next = [...cards];
+    if (target < 0 || target >= normalCards.length) return;
+    const origSort = new Map(normalCards.map((c) => [c.id, c.sort]));
+    const next = [...normalCards];
     [next[index], next[target]] = [next[target], next[index]];
     const reordered = next.map((c, i) => ({ ...c, sort: i }));
-    setCards(reordered);
+    const byId = new Map(reordered.map((c) => [c.id, c]));
+    setCards(cards.map((c) => byId.get(c.id) ?? c));
     setBusy(true);
     setNotice("");
     try {
@@ -291,6 +319,58 @@ export default function MeClient() {
       console.error(e);
       setNotice("並び替えを保存できませんでした。");
       await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 飾りの選択／解除（下書き。最大3点、選んだ順が配置順）
+  const toggleDeco = (src: string) => {
+    setDecoSel((prev) => {
+      if (prev.includes(src)) return prev.filter((x) => x !== src);
+      if (prev.length >= 3) return prev;
+      return [...prev, src];
+    });
+  };
+
+  // 飾りの保存: 飾り行だけを対象に、消えた分は delete・増えた分は insert・
+  // 順序が変わった分は sort を更新する。他のカードには触らない。
+  const saveDecorations = async () => {
+    setBusy(true);
+    setNotice("");
+    try {
+      const kept = savedDecos.filter((c) => c.image_url && decoSel.includes(c.image_url));
+      const removed = savedDecos.filter(
+        (c) => !(c.image_url && decoSel.includes(c.image_url)),
+      );
+      for (const c of removed) {
+        await deleteRows("profile_cards", `id=eq.${c.id}`);
+      }
+      for (let i = 0; i < decoSel.length; i++) {
+        const src = decoSel[i];
+        const existing = kept.find((c) => c.image_url === src);
+        if (existing) {
+          if (existing.sort !== i) {
+            await updateRows("profile_cards", `id=eq.${existing.id}`, { sort: i });
+          }
+        } else {
+          const stamp = STAMPS.find((s) => s.src === src);
+          await insertRow<ProfileCard>("profile_cards", {
+            user_id: session.userId,
+            kind: "picture",
+            title: stamp?.label ?? "",
+            url: null,
+            image_url: src,
+            description: null,
+            sort: i,
+          });
+        }
+      }
+      setNotice("飾りを保存しました。");
+      await load();
+    } catch (e) {
+      console.error(e);
+      setNotice("飾りを保存できませんでした。");
     } finally {
       setBusy(false);
     }
@@ -323,8 +403,8 @@ export default function MeClient() {
     }
   };
 
-  // ダイレクト招待の作成は段階2で紹介タブ（invite-section）へ一本化したため、
-  // ここには置かない。ここに残すのは運営の橋渡し作成（createSet）だけ。
+  // ダイレクト招待の作成は紹介ページ（/invite）に移したため、ここには置かない。
+  // ここに残すのは運営の橋渡し作成（createSet）だけ。
 
   const voidSet = async (st: IntroSet) => {
     if (
@@ -401,22 +481,40 @@ export default function MeClient() {
       cardImageUrl.trim() ||
       cardDescription.trim(),
   );
-  const previewCards: ProfileCard[] = hasDraftCard
-    ? [
-        ...cards,
-        {
-          id: -1,
-          user_id: me.id,
-          kind: cardKind,
-          title: cardTitle,
-          url: cardUrl.trim() || null,
-          image_url: cardImageUrl.trim() || null,
-          description: cardDescription.trim() || null,
-          sort: cards.length,
-          created_at: "",
-        },
-      ]
-    : cards;
+  // 飾りの下書き（選択中のスタンプ）も、プレビュー用の疑似カードとして混ぜる。
+  // kind='picture' + image_url=スタンプの実パス なので、ProfilePageView 側で
+  // isStampDecoration により飾りとして描き分けられる。
+  const decoDraftCards: ProfileCard[] = decoSel.map((src, i) => ({
+    id: -1000 - i,
+    user_id: me.id,
+    kind: "picture",
+    title: STAMPS.find((s) => s.src === src)?.label ?? "",
+    url: null,
+    image_url: src,
+    description: null,
+    sort: i,
+    created_at: "",
+  }));
+
+  const previewCards: ProfileCard[] = [
+    ...normalCards,
+    ...(hasDraftCard
+      ? [
+          {
+            id: -1,
+            user_id: me.id,
+            kind: cardKind,
+            title: cardTitle,
+            url: cardUrl.trim() || null,
+            image_url: cardImageUrl.trim() || null,
+            description: cardDescription.trim() || null,
+            sort: normalCards.length,
+            created_at: "",
+          } satisfies ProfileCard,
+        ]
+      : []),
+    ...decoDraftCards,
+  ];
 
   const inputCls = "w-full rounded-xl border px-3 py-2 text-sm outline-none";
   const inputStyle = { borderColor: "var(--line)", background: "var(--surface)" } as const;
@@ -569,9 +667,9 @@ export default function MeClient() {
           <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
             リンクや短い文を並べて、あなたのホームと公開ページに出すものです。
           </p>
-          {cards.length > 0 && (
+          {normalCards.length > 0 && (
             <ul className="mt-3 space-y-2">
-              {cards.map((c, idx) => (
+              {normalCards.map((c, idx) => (
                 <li
                   key={c.id}
                   className="flex items-center gap-2 rounded-xl border px-3 py-2"
@@ -598,7 +696,7 @@ export default function MeClient() {
                   </button>
                   <button
                     type="button"
-                    disabled={busy || idx === cards.length - 1}
+                    disabled={busy || idx === normalCards.length - 1}
                     onClick={() => moveCard(idx, 1)}
                     aria-label="下へ"
                     className="px-1 text-sm disabled:opacity-30"
@@ -684,6 +782,68 @@ export default function MeClient() {
           </div>
         </section>
 
+        <section className={sectionCls} style={sectionStyle}>
+          <h2 className="text-sm font-bold">カードを飾る</h2>
+          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+            スタンプを最大3つまで選んで、あなたのページに浮く飾りにできます。
+            選んだ順に、右上・左下・右下へ配置されます。タップで選択／解除、
+            上のプレビューで見え方を確認できます。
+          </p>
+          <div className="mt-3 grid grid-cols-4 gap-2">
+            {STAMPS.map((s) => {
+              const order = decoSel.indexOf(s.src);
+              const selected = order >= 0;
+              const full = !selected && decoSel.length >= 3;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={busy || full}
+                  onClick={() => toggleDeco(s.src)}
+                  aria-pressed={selected}
+                  aria-label={`${s.label}を${selected ? "外す" : "飾る"}`}
+                  className="relative rounded-xl border p-1.5 disabled:opacity-40"
+                  style={
+                    selected
+                      ? {
+                          borderColor: "var(--accent)",
+                          background: "var(--accent-soft)",
+                        }
+                      : { borderColor: "var(--line)", background: "var(--surface)" }
+                  }
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={s.src} alt={s.label} className="mx-auto h-14 w-14 object-contain" />
+                  <span className="mt-0.5 block truncate text-center text-[10px]">
+                    {s.label}
+                  </span>
+                  {selected && (
+                    <span
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                      style={{ background: "var(--accent)" }}
+                    >
+                      {order + 1}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px]" style={{ color: "var(--muted)" }}>
+            {decoSel.length} / 3 選択中
+            {decoSel.length >= 3 && "（いっぱいです。外すと別のスタンプを選べます）"}
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={saveDecorations}
+            className="mt-3 w-full rounded-full py-2.5 text-sm font-bold text-white disabled:opacity-50"
+            style={{ background: "var(--accent)" }}
+          >
+            飾りを保存する
+          </button>
+        </section>
+
         {me.is_guest && (
           <section className={sectionCls} style={sectionStyle}>
             <h2 className="text-sm font-bold">ゲストで参加中です</h2>
@@ -739,11 +899,11 @@ export default function MeClient() {
         <section className={sectionCls} style={sectionStyle}>
           <h2 className="text-sm font-bold">招待リンク</h2>
           <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            招待リンクの作成と管理は、トップの下部にある「紹介」タブに移りました。
+            招待リンクの作成と管理は、紹介ページに移りました。
           </p>
           <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-            <Link href="/" className="underline underline-offset-2">
-              トップへ戻って「紹介」タブを開く
+            <Link href="/invite" className="underline underline-offset-2">
+              紹介ページを開く
             </Link>
           </p>
         </section>
@@ -756,7 +916,7 @@ export default function MeClient() {
             あなたが2人を繋ぐ「橋渡し」の招待です。リンクが2本できるので、2人に1本ずつ渡してください。
             両方が開くと、その2人の繋がりが始まります。あなた自身は繋がりには入りません。
             運営アカウントは制限なく作れます。
-            あなた自身が相手になる招待（運営用招待）は紹介タブで作ります。
+            あなた自身が相手になる招待（運営用招待）は紹介ページで作ります。
           </p>
           <p className="mt-3 text-[11px] font-bold">繋がったあとの流れ</p>
           <ul

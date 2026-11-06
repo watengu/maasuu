@@ -702,7 +702,11 @@ export default function TalkClient() {
               {formatDateDividerJST(conn.started_at)}に始まった繋がりです。やり取りは {turns.length} 件ありました。
             </p>
             <p className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--muted)" }}>
-              新しい繋がりは紹介から生まれます。一覧の下の「紹介する」から招待を作れます。
+              新しい繋がりは紹介から生まれます。
+              <Link href="/invite" className="underline underline-offset-2">
+                紹介ページ
+              </Link>
+              から招待を作れます。
             </p>
             <div className="mt-3 flex items-center gap-4">
               <Link

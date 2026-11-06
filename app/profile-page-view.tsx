@@ -11,7 +11,7 @@
 // リンクカードは URL から SNS を自動判定し、アイコン行とボタンに反映する。
 import type { CSSProperties, ReactNode } from "react";
 import type { Profile, ProfileCard } from "../lib/types";
-import { normalizeCardKind } from "../lib/types";
+import { isStampDecoration, normalizeCardKind } from "../lib/types";
 
 /** 背景テーマシーン（profiles.theme にキーを保存。cover_url がある場合はそちらが優先） */
 export type ProfileTheme = {
@@ -53,6 +53,26 @@ export const PROFILE_THEMES: Record<string, ProfileTheme> = {
       "linear-gradient(180deg, #ffeef3 0%, #ffd9e4 40%, #ffc9d6 72%, #f6b8c8 100%)",
     dark: false,
   },
+  // 段階2調整で追加した3情景。色はブランドのパレット（紙クリーム／撫子ローズ／
+  // 深ローズ／墨／灰桜／金）の濃淡だけで組み、外部素材は使わない。
+  rose: {
+    label: "薔薇の庭",
+    gradient:
+      "linear-gradient(180deg, #fdf7f4 0%, #f3d3dd 34%, #c25e7e 72%, #a84a68 100%)",
+    dark: true,
+  },
+  gold: {
+    label: "金の野原",
+    gradient:
+      "linear-gradient(180deg, #fdf7f4 0%, #f0dfae 32%, #c9a227 70%, #38303a 100%)",
+    dark: true,
+  },
+  mist: {
+    label: "灰桜の霧",
+    gradient:
+      "linear-gradient(180deg, #fdf7f4 0%, #e8dde1 48%, #9a8b93 100%)",
+    dark: false,
+  },
 };
 
 /** 保存済みキーをシーンキーに解決する（旧キー sunset は default と同じ見た目にする） */
@@ -65,6 +85,7 @@ export function resolveThemeKey(key: string | null | undefined): string {
 const LIGHT_FG: Record<string, string> = {
   morning: "#44503c",
   sakura: "#63384a",
+  mist: "#38303a",
 };
 
 /** 丘のシルエット（2層）。viewBox は 400x140 で横いっぱいに伸ばす */
@@ -177,6 +198,57 @@ function SceneArt({ sceneKey }: { sceneKey: string }) {
           <Hills back="rgba(150, 95, 115, 0.30)" front="rgba(120, 70, 92, 0.45)" />
         </>
       );
+    case "rose":
+      // 薔薇の庭: ローズのグローと花びら、深ローズの丘
+      return (
+        <>
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: [
+                "radial-gradient(ellipse 260px 160px at 50% 110px, rgba(253, 247, 244, 0.55), rgba(253, 247, 244, 0) 70%)",
+                "radial-gradient(5px 3.5px at 36px 60px, rgba(253, 247, 244, 0.8), transparent)",
+                "radial-gradient(4px 3px at 150px 130px, rgba(168, 74, 104, 0.5), transparent)",
+                "radial-gradient(5px 3.5px at 220px 44px, rgba(253, 247, 244, 0.65), transparent)",
+                "radial-gradient(4px 3px at 96px 220px, rgba(168, 74, 104, 0.45), transparent)",
+                "radial-gradient(5px 3.5px at 190px 260px, rgba(253, 247, 244, 0.6), transparent)",
+              ].join(", "),
+              backgroundSize: "100% 100%, 260px 300px, 260px 300px, 260px 300px, 260px 300px, 260px 300px",
+            }}
+          />
+          <Hills back="rgba(120, 52, 74, 0.35)" front="rgba(74, 32, 48, 0.55)" />
+        </>
+      );
+    case "gold":
+      // 金の野原: 金色のグローと、墨色の丘のシルエット
+      return (
+        <>
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 280px 170px at 50% 120px, rgba(253, 247, 244, 0.6), rgba(253, 247, 244, 0) 70%)",
+            }}
+          />
+          <Hills back="rgba(56, 48, 58, 0.35)" front="rgba(56, 48, 58, 0.62)" />
+        </>
+      );
+    case "mist":
+      // 灰桜の霧: 横にたなびく霧の帯と、淡い墨色の丘
+      return (
+        <>
+          <div
+            className="absolute inset-0"
+            style={{
+              background: [
+                "linear-gradient(180deg, rgba(253, 247, 244, 0) 30%, rgba(253, 247, 244, 0.55) 42%, rgba(253, 247, 244, 0) 54%)",
+                "linear-gradient(180deg, rgba(253, 247, 244, 0) 58%, rgba(253, 247, 244, 0.45) 70%, rgba(253, 247, 244, 0) 82%)",
+              ].join(", "),
+            }}
+          />
+          <Hills back="rgba(56, 48, 58, 0.16)" front="rgba(56, 48, 58, 0.28)" />
+        </>
+      );
     default:
       // 夕焼けの丘
       return (
@@ -193,6 +265,14 @@ function SceneArt({ sceneKey }: { sceneKey: string }) {
       );
   }
 }
+
+/** スタンプ飾りの配置（sort 順）: 1点目=カバー右上寄り、2点目=左下、3点目=右下。
+ *  大きさは 56〜72px に収め、本文のレイアウトには干渉させない（絶対配置で浮かせる） */
+const DECO_POSITIONS: CSSProperties[] = [
+  { top: "9%", right: "5%", width: 72, height: 72, transform: "rotate(6deg)" },
+  { bottom: "16%", left: "4%", width: 60, height: 60, transform: "rotate(-7deg)" },
+  { bottom: "7%", right: "6%", width: 56, height: 56, transform: "rotate(4deg)" },
+];
 
 type SnsService = { name: string; color: string; hosts: string[] };
 
@@ -311,11 +391,21 @@ export default function ProfilePageView({
     ? { color: fg }
     : { backgroundImage: theme.gradient, color: fg };
 
+  // スタンプ飾り（段階2調整）: 通常のカード一覧からは外し、決まった位置に
+  // 浮く飾りとして描く。並びは sort 順（= 選んだ順）で最大3点。
+  // 呼び出し側は sort 順に渡す前提だが、ここでも sort→id で安定させる。
+  const decorations = cards
+    .filter(isStampDecoration)
+    .slice()
+    .sort((a, b) => a.sort - b.sort || a.id - b.id)
+    .slice(0, 3);
+  const visibleCards = cards.filter((c) => !isStampDecoration(c));
+
   // SNS アイコン行: リンクカードからサービスごとに最初の1件を抽出する
   const snsRow: { service: SnsService; url: string }[] = [];
   {
     const seen = new Set<string>();
-    for (const c of cards) {
+    for (const c of visibleCards) {
       if (normalizeCardKind(c.kind) !== "button" || !c.url) continue;
       const s = detectSns(c.url);
       if (s && !seen.has(s.name)) {
@@ -419,9 +509,9 @@ export default function ProfilePageView({
           </div>
         )}
 
-        {cards.length > 0 ? (
+        {visibleCards.length > 0 ? (
           <ul className={`${compact ? "mt-5 space-y-2.5" : "mt-7 space-y-3"}`}>
-            {cards.map((c) => {
+            {visibleCards.map((c) => {
               const kind = normalizeCardKind(c.kind);
               if (kind === "button" && c.url) {
                 const sns = detectSns(c.url);
@@ -624,6 +714,22 @@ export default function ProfilePageView({
           </p>
         </div>
       </div>
+
+      {/* スタンプ飾り: 背景の上に浮く飾り（操作は受けない） */}
+      {decorations.length > 0 && (
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+          {decorations.map((c, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={c.id}
+              src={c.image_url ?? ""}
+              alt=""
+              className="absolute object-contain drop-shadow-lg"
+              style={DECO_POSITIONS[i]}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

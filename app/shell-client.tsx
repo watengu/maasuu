@@ -1,11 +1,12 @@
 "use client";
 
-// スライドシェル（トップ画面）: つながり ⇔ 紹介 ⇔ ホーム の3パネルを横スライドで
-// 切り替える（段階2・設計 §2 で紹介を専用タブに分離し3面化）。
+// スライドシェル（トップ画面）: つながり ⇔ ホーム の2パネルを横スライドで
+// 切り替える。紹介は段階2で専用タブ化したが、段階2調整でタブを廃止し、
+// 専用ルート /invite のページへ移した（シェルは2面に戻す）。
 // セッション解決とデータ取得はシェルで1回だけ行い、各パネルへ props で配る
 // （セッション確認の集約）。パネルは全てマウントしたままにし、スライドしても
 // 状態は保持される。各パネルはデータが届くまでスケルトンを表示する。
-// 切替は下部タブバー（つながり／紹介／ホーム）のタップが主で、スワイプ（ポインタの横
+// 切替は下部タブバー（つながり／ホーム）のタップが主で、スワイプ（ポインタの横
 // ドラッグ＋スナップ）も併設する。上部セグメントは廃止し、ナビは下部タブに一本化
 // （Ao 指示 2026-10-29: 上下で名前が揃っていなかったため）。
 // 縦スクロールとは touch-action: pan-y と縦方向の動き優先の判定で喧嘩させない。
@@ -21,7 +22,6 @@ import LandingScreen from "./landing";
 import BannedScreen from "./banned-screen";
 import ProfileCreateForm from "./profile-create-form";
 import FriendsPanel, { type ConnView } from "./friends-panel";
-import InviteSection from "./invite-section";
 import HomePanel from "./home-panel";
 import {
   judgeConnection,
@@ -48,8 +48,8 @@ type Phase =
   | { kind: "ready"; session: Session; me: Profile };
 
 // 下部タブバーのラベル（タップ切替が主、スワイプは補助。Ao 決定 2026-10-29。
-// 段階2で「紹介」を真ん中に追加し3タブ化）
-const TAB_LABELS = ["つながり", "紹介", "ホーム"] as const;
+// 段階2調整で「紹介」はタブから専用ページ /invite へ移し、2タブに戻した）
+const TAB_LABELS = ["つながり", "ホーム"] as const;
 const LAST_PANEL = TAB_LABELS.length - 1;
 
 // judge 用に取得するターンの形。engine の判定は sender_id / created_at だけを見るが、
@@ -364,8 +364,8 @@ export default function ShellClient() {
         >
           {/* items-stretch: ホームパネルの全面背景（ProfilePageView）を
               パネル全高に広げるため（第4弾 2026-10-29） */}
-          <div className="flex w-[300%] items-stretch" style={trackStyle}>
-            <div className="w-1/3 min-w-0 shrink-0" inert={panel !== 0}>
+          <div className="flex w-[200%] items-stretch" style={trackStyle}>
+            <div className="w-1/2 min-w-0 shrink-0" inert={panel !== 0}>
               {views ? (
                 <FriendsPanel
                   session={session}
@@ -377,35 +377,9 @@ export default function ShellClient() {
                 <FriendsSkeleton />
               )}
             </div>
-            <div className="w-1/3 min-w-0 shrink-0" inert={panel !== 1}>
-              {me.is_guest ? (
-                <div className="px-4 py-5">
-                  <h2 className="text-sm font-bold" style={{ color: "var(--muted)" }}>
-                    紹介
-                  </h2>
-                  <div
-                    className="mt-3 rounded-2xl border p-5 text-sm leading-relaxed"
-                    style={{ borderColor: "var(--line)", background: "var(--surface)" }}
-                  >
-                    <p>ゲストで参加中のため、招待は作れません。</p>
-                    <p className="mt-2">
-                      あなたとの繋がりは「つながり」タブで確認できます。
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <InviteSection session={session} me={me} />
-              )}
-            </div>
-            <div className="w-1/3 min-w-0 shrink-0" inert={panel !== 2}>
+            <div className="w-1/2 min-w-0 shrink-0" inert={panel !== 1}>
               {cards ? (
-                <HomePanel
-                  session={session}
-                  me={me}
-                  cards={cards}
-                  views={views}
-                  onGoInvite={() => setPanel(1)}
-                />
+                <HomePanel session={session} me={me} cards={cards} views={views} />
               ) : (
                 <HomeSkeleton />
               )}
