@@ -5,7 +5,6 @@
 // 残り時間表示を進めるため、30秒ごとに再描画する。
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import InviteSection from "./invite-section";
 import type { Session } from "./auth-client";
 import {
   isDayOne,
@@ -93,8 +92,8 @@ export default function FriendsPanel({
             {me.is_guest
               ? "招待が届くと、ここに繋がりが表示されます。"
               : me.is_operator
-                ? "下の「紹介する」から招待リンクを作って、相手に渡してください。"
-                : "下の「紹介する」から招待リンクを作って、相手に渡してください（作成は3日に1回まで）。"}
+                ? "下の「紹介」タブから招待リンクを作って、相手に渡してください。"
+                : "下の「紹介」タブから招待リンクを作って、相手に渡してください（作成は3日に1回まで）。"}
           </p>
         </div>
       ) : (
@@ -248,7 +247,6 @@ export default function FriendsPanel({
           })}
         </ul>
       )}
-      {!me.is_guest && <InviteSection session={session} me={me} />}
       <p className="mt-6 text-center text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
         繋がりには期限があります。期限までに往復のやりとりが足りないと、繋がりは消えます。
         <br />

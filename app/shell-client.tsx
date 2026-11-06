@@ -1,10 +1,11 @@
 "use client";
 
-// スライドシェル（トップ画面）: 友人一覧 ⇔ ホーム の2パネルを横スライドで切り替える。
-// セッション解決とデータ取得はシェルで1回だけ行い、両パネルへ props で配る
-// （セッション確認の集約）。パネルは両方ともマウントしたままにし、スライドしても
+// スライドシェル（トップ画面）: つながり ⇔ 紹介 ⇔ ホーム の3パネルを横スライドで
+// 切り替える（段階2・設計 §2 で紹介を専用タブに分離し3面化）。
+// セッション解決とデータ取得はシェルで1回だけ行い、各パネルへ props で配る
+// （セッション確認の集約）。パネルは全てマウントしたままにし、スライドしても
 // 状態は保持される。各パネルはデータが届くまでスケルトンを表示する。
-// 切替は下部タブバー（つながり／ホーム）のタップが主で、スワイプ（ポインタの横
+// 切替は下部タブバー（つながり／紹介／ホーム）のタップが主で、スワイプ（ポインタの横
 // ドラッグ＋スナップ）も併設する。上部セグメントは廃止し、ナビは下部タブに一本化
 // （Ao 指示 2026-10-29: 上下で名前が揃っていなかったため）。
 // 縦スクロールとは touch-action: pan-y と縦方向の動き優先の判定で喧嘩させない。
@@ -20,6 +21,7 @@ import LandingScreen from "./landing";
 import BannedScreen from "./banned-screen";
 import ProfileCreateForm from "./profile-create-form";
 import FriendsPanel, { type ConnView } from "./friends-panel";
+import InviteSection from "./invite-section";
 import HomePanel from "./home-panel";
 import {
   judgeConnection,
@@ -45,8 +47,10 @@ type Phase =
   | { kind: "banned" }
   | { kind: "ready"; session: Session; me: Profile };
 
-// 下部タブバーのラベル（タップ切替が主、スワイプは補助。Ao 決定 2026-10-29）
-const TAB_LABELS = ["つながり", "ホーム"] as const;
+// 下部タブバーのラベル（タップ切替が主、スワイプは補助。Ao 決定 2026-10-29。
+// 段階2で「紹介」を真ん中に追加し3タブ化）
+const TAB_LABELS = ["つながり", "紹介", "ホーム"] as const;
+const LAST_PANEL = TAB_LABELS.length - 1;
 
 // judge 用に取得するターンの形。engine の判定は sender_id / created_at だけを見るが、
 // バッジの未読判定（read_at が null かつ表示期限内）にも同じ取得を使い回す。
@@ -231,8 +235,8 @@ export default function ShellClient() {
       if (start.engaged && !start.cancelled) {
         const w = viewportRef.current?.clientWidth ?? 320;
         const threshold = Math.max(48, w * 0.18);
-        if (start.dx <= -threshold) setPanel(1);
-        else if (start.dx >= threshold) setPanel(0);
+        if (start.dx <= -threshold) setPanel((p) => Math.min(LAST_PANEL, p + 1));
+        else if (start.dx >= threshold) setPanel((p) => Math.max(0, p - 1));
         if (Math.abs(start.dx) > 10) suppressClickRef.current = true;
       }
       setDragDx(null);
@@ -301,15 +305,18 @@ export default function ShellClient() {
       ? 0
       : panel === 0
         ? Math.max(-480, Math.min(24, dragDx))
-        : Math.max(-24, Math.min(480, dragDx));
+        : panel === LAST_PANEL
+          ? Math.max(-24, Math.min(480, dragDx))
+          : Math.max(-480, Math.min(480, dragDx));
+  const panelPct = panel * (100 / TAB_LABELS.length);
   const trackStyle: CSSProperties =
     dragDx === null
       ? {
-          transform: `translateX(-${panel * 50}%)`,
+          transform: `translateX(-${panelPct}%)`,
           transition: "transform 280ms ease",
         }
       : {
-          transform: `translateX(calc(-${panel * 50}% + ${shownDx}px))`,
+          transform: `translateX(calc(-${panelPct}% + ${shownDx}px))`,
           transition: "none",
         };
 
@@ -357,8 +364,8 @@ export default function ShellClient() {
         >
           {/* items-stretch: ホームパネルの全面背景（ProfilePageView）を
               パネル全高に広げるため（第4弾 2026-10-29） */}
-          <div className="flex w-[200%] items-stretch" style={trackStyle}>
-            <div className="w-1/2 min-w-0 shrink-0" inert={panel !== 0}>
+          <div className="flex w-[300%] items-stretch" style={trackStyle}>
+            <div className="w-1/3 min-w-0 shrink-0" inert={panel !== 0}>
               {views ? (
                 <FriendsPanel
                   session={session}
@@ -370,8 +377,38 @@ export default function ShellClient() {
                 <FriendsSkeleton />
               )}
             </div>
-            <div className="w-1/2 min-w-0 shrink-0" inert={panel !== 1}>
-              {cards ? <HomePanel me={me} cards={cards} /> : <HomeSkeleton />}
+            <div className="w-1/3 min-w-0 shrink-0" inert={panel !== 1}>
+              {me.is_guest ? (
+                <div className="px-4 py-5">
+                  <h2 className="text-sm font-bold" style={{ color: "var(--muted)" }}>
+                    紹介
+                  </h2>
+                  <div
+                    className="mt-3 rounded-2xl border p-5 text-sm leading-relaxed"
+                    style={{ borderColor: "var(--line)", background: "var(--surface)" }}
+                  >
+                    <p>ゲストで参加中のため、招待は作れません。</p>
+                    <p className="mt-2">
+                      あなたとの繋がりは「つながり」タブで確認できます。
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <InviteSection session={session} me={me} />
+              )}
+            </div>
+            <div className="w-1/3 min-w-0 shrink-0" inert={panel !== 2}>
+              {cards ? (
+                <HomePanel
+                  session={session}
+                  me={me}
+                  cards={cards}
+                  views={views}
+                  onGoInvite={() => setPanel(1)}
+                />
+              ) : (
+                <HomeSkeleton />
+              )}
             </div>
           </div>
         </div>
