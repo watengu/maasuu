@@ -381,7 +381,12 @@ export default function ProfilePageView({
   cards: ProfileCard[];
   /** 背景エリア最下部に出す注記・リンク類（公開ページの注記、ホームの各種リンク） */
   footer?: ReactNode;
-  /** 設定画面のライブプレビュー用に余白とアイコンを詰める */
+  /**
+   * ホーム（自分のカード）と設定画面のライブプレビュー用に余白とアイコンを
+   * 詰める。操作性修正（2026-11-06）でホーム側をもう一段圧縮した:
+   * 気分枠は1行レイアウト、余白・カード内パディングも compact だけ詰める。
+   * 公開ページ（/p）は compact を渡さないので表示は変わらない。
+   */
   compact?: boolean;
   className?: string;
   /**
@@ -433,7 +438,9 @@ export default function ProfilePageView({
     }
   }
 
-  const iconSize = compact ? "h-20 w-20" : "h-28 w-28";
+  const iconSize = compact ? "h-16 w-16" : "h-28 w-28";
+  // compact（ホーム／プレビュー）だけカード内の上下余白を詰める
+  const cardPadCls = compact ? "px-4 py-2.5" : "px-4 py-3.5";
   const statusPillCls = dark
     ? "border-white/30 bg-white/15 text-white"
     : "border-black/10 bg-white/55";
@@ -464,7 +471,7 @@ export default function ProfilePageView({
       )}
 
       <div
-        className={`relative flex min-w-0 flex-1 flex-col px-5 ${compact ? "pb-9 pt-4" : "pb-[calc(5rem+env(safe-area-inset-bottom))] pt-6"}`}
+        className={`relative flex min-w-0 flex-1 flex-col px-5 ${compact ? "pb-6 pt-3" : "pb-[calc(5rem+env(safe-area-inset-bottom))] pt-6"}`}
       >
         <div
           className="text-[13px] font-bold tracking-[0.18em]"
@@ -473,7 +480,7 @@ export default function ProfilePageView({
           まぁすぅ
         </div>
 
-        <div className={`text-center ${compact ? "mt-3" : "mt-5"}`}>
+        <div className={`text-center ${compact ? "mt-2" : "mt-5"}`}>
           {profile.icon_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -489,12 +496,12 @@ export default function ProfilePageView({
               <img
                 src="/stamps/stamp-07.png"
                 alt="まぁ＆すぅ"
-                className={`${compact ? "h-16 w-16" : "h-24 w-24"} object-contain`}
+                className={`${compact ? "h-12 w-12" : "h-24 w-24"} object-contain`}
               />
             </div>
           )}
           <h1
-            className={`${compact ? "mt-3 text-xl" : "mt-4 text-2xl"} font-bold`}
+            className={`${compact ? "mt-2 text-xl" : "mt-4 text-2xl"} font-bold`}
             style={
               dark ? { textShadow: "0 2px 14px rgba(0, 0, 0, 0.45)" } : undefined
             }
@@ -503,7 +510,7 @@ export default function ProfilePageView({
           </h1>
           {profile.status_line && (
             <p
-              className={`mt-3 inline-block rounded-full border px-4 py-1.5 text-sm backdrop-blur-sm ${statusPillCls}`}
+              className={`inline-block rounded-full border text-sm backdrop-blur-sm ${compact ? "mt-2 px-3.5 py-1" : "mt-3 px-4 py-1.5"} ${statusPillCls}`}
             >
               {profile.status_line}
             </p>
@@ -511,7 +518,7 @@ export default function ProfilePageView({
         </div>
 
         {snsRow.length > 0 && (
-          <div className={`flex flex-wrap justify-center gap-3 ${compact ? "mt-4" : "mt-5"}`}>
+          <div className={`flex flex-wrap justify-center ${compact ? "mt-3 gap-2.5" : "mt-5 gap-3"}`}>
             {snsRow.map(({ service, url }) => (
               <a
                 key={service.name}
@@ -519,7 +526,7 @@ export default function ProfilePageView({
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={service.name}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-[#fffbf3] shadow-md transition hover:opacity-90"
+                className={`flex ${compact ? "h-9 w-9" : "h-11 w-11"} items-center justify-center rounded-full bg-[#fffbf3] shadow-md transition hover:opacity-90`}
               >
                 <SnsIcon service={service} />
               </a>
@@ -531,7 +538,7 @@ export default function ProfilePageView({
             自分のホームで未設定なら、枠の位置に静かな誘導を出す */}
         {mood ? (
           <div
-            className={`flex items-center gap-3 rounded-[20px] px-4 py-3 backdrop-blur-md ${compact ? "mt-5" : "mt-7"}`}
+            className={`flex items-center backdrop-blur-md ${compact ? "mt-3 gap-2.5 rounded-[20px] px-3.5 py-2" : "mt-7 gap-3 rounded-[20px] px-4 py-3"}`}
             style={
               dark
                 ? {
@@ -548,19 +555,29 @@ export default function ProfilePageView({
             <img
               src={mood.src}
               alt=""
-              className="h-12 w-12 shrink-0 object-contain"
+              className={`${compact ? "h-9 w-9" : "h-12 w-12"} shrink-0 object-contain`}
             />
-            <span className="min-w-0">
-              <span className="block text-[10px] font-bold tracking-[0.14em] opacity-80">
-                今日の気分
+            {compact ? (
+              // compact（ホーム）は1行レイアウト: 見出しと気分を横並びにする
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span className="shrink-0 text-[10px] font-bold tracking-[0.14em] opacity-80">
+                  今日の気分
+                </span>
+                <span className="truncate text-sm font-bold">{mood.label}</span>
               </span>
-              <span className="block truncate text-sm font-bold">{mood.label}</span>
-            </span>
+            ) : (
+              <span className="min-w-0">
+                <span className="block text-[10px] font-bold tracking-[0.14em] opacity-80">
+                  今日の気分
+                </span>
+                <span className="block truncate text-sm font-bold">{mood.label}</span>
+              </span>
+            )}
           </div>
         ) : showMoodPrompt ? (
           <Link
             href="/me"
-            className={`flex items-center gap-3 rounded-[20px] px-4 py-3 backdrop-blur-md ${compact ? "mt-5" : "mt-7"}`}
+            className={`flex items-center gap-3 rounded-[20px] backdrop-blur-md ${compact ? "mt-3 px-3.5 py-2" : "mt-7 px-4 py-3"}`}
             style={
               dark
                 ? {
@@ -573,12 +590,21 @@ export default function ProfilePageView({
                   }
             }
           >
-            <span className="min-w-0">
-              <span className="block text-sm font-bold">今日の気分は？</span>
-              <span className="block text-[11px] opacity-80">
-                スタンプを1つ置けます
+            {compact ? (
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span className="shrink-0 text-sm font-bold">今日の気分は？</span>
+                <span className="truncate text-[11px] opacity-80">
+                  スタンプを1つ置けます
+                </span>
               </span>
-            </span>
+            ) : (
+              <span className="min-w-0">
+                <span className="block text-sm font-bold">今日の気分は？</span>
+                <span className="block text-[11px] opacity-80">
+                  スタンプを1つ置けます
+                </span>
+              </span>
+            )}
           </Link>
         ) : null}
 
@@ -586,8 +612,8 @@ export default function ProfilePageView({
           <ul
             className={
               hasMoodArea
-                ? `${compact ? "mt-4 space-y-2.5" : "mt-5 space-y-3"}`
-                : `${compact ? "mt-5 space-y-2.5" : "mt-7 space-y-3"}`
+                ? `${compact ? "mt-3 space-y-2" : "mt-5 space-y-3"}`
+                : `${compact ? "mt-3 space-y-2" : "mt-7 space-y-3"}`
             }
           >
             {visibleCards.map((c) => {
@@ -605,7 +631,7 @@ export default function ProfilePageView({
                       href={c.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-3 rounded-[20px] px-4 py-3.5 shadow-md transition hover:opacity-95"
+                      className={`flex items-center gap-3 rounded-[20px] ${cardPadCls} shadow-md transition hover:opacity-95`}
                       style={{ background: "#fffbf3", color: "#43302a" }}
                     >
                       {sns ? (
@@ -663,7 +689,7 @@ export default function ProfilePageView({
                       </span>
                     )}
                     {showMeta && (
-                      <span className="block px-4 py-3">
+                      <span className={compact ? "block px-4 py-2" : "block px-4 py-3"}>
                         {c.image_url && c.title.trim() && (
                           <span className="block truncate text-sm font-bold">
                             {c.title}
@@ -725,7 +751,7 @@ export default function ProfilePageView({
                 return (
                   <li
                     key={c.id}
-                    className="rounded-[20px] px-4 py-3.5 text-sm leading-relaxed break-words backdrop-blur-md"
+                    className={`rounded-[20px] ${cardPadCls} text-sm leading-relaxed break-words backdrop-blur-md`}
                     style={
                       dark
                         ? {
@@ -762,7 +788,7 @@ export default function ProfilePageView({
               return (
                 <li
                   key={c.id}
-                  className="rounded-[20px] px-4 py-3.5 text-sm leading-relaxed break-words backdrop-blur-md"
+                  className={`rounded-[20px] ${cardPadCls} text-sm leading-relaxed break-words backdrop-blur-md`}
                   style={
                     dark
                       ? {
@@ -787,7 +813,7 @@ export default function ProfilePageView({
           </p>
         )}
 
-        <div className="mt-auto pt-10">
+        <div className={compact ? "mt-auto pt-5" : "mt-auto pt-10"}>
           {footer}
           <p className="mt-4 text-center text-[10.5px] tracking-[0.14em] opacity-85">
             紹介制SNS まぁすぅ

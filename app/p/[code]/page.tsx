@@ -1,6 +1,8 @@
 // 宣伝ページ（/p/[code]）: ログイン不要の公開プロフィール。
 // anon key で読む。RLS により promo_on = true のプロフィールとそのカードだけが返る。
 // OFF の場合や存在しない場合は「公開されていません」と表示する。
+// ページ上部には「公開ページ」の帯をこのページ側で付ける（操作性修正
+// 2026-11-06）。本人のホーム（ProfilePageView の見え方）は変えない。
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import ProfilePageView from "../../profile-page-view";
@@ -49,11 +51,17 @@ export default async function PromoPage({
 
   return (
     <main className="flex min-h-dvh w-full flex-col">
+      <p
+        className="py-1.5 text-center text-[11px] font-bold tracking-[0.18em]"
+        style={{ background: "var(--accent-soft)", color: "var(--accent-strong)" }}
+      >
+        公開ページ
+      </p>
       <ProfilePageView
         profile={profile}
         cards={cards}
         mood={mood}
-        className="min-h-dvh flex-1"
+        className="flex-1"
         footer={
           <p className="text-center text-xs leading-relaxed opacity-85">
             <Link href="/" className="underline underline-offset-2">

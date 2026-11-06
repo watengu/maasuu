@@ -25,6 +25,9 @@
 // （promo_on は「他人から /p で見えるか」だけを決める）。
 // 第4弾（2026-10-29）で全面背景に合わせ、パネル全体にページを広げ、
 // 公開ページへのリンクや設定導線は背景エリア内の最下部（footer）に置く。
+// 操作性修正（2026-11-06）: 設定への常設入り口はシェルのヘッダーに一本化し、
+// footer の「設定を開く」は廃止した（状態説明の中の誘導リンクは残す）。
+// 公開ページへの入り口は footer の「公開ページを見る」のみ。
 // 公開URLのコピー／共有などの操作は設定（/me）に置き、ここはページらしく保つ。
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -286,11 +289,9 @@ export default function HomePanel({
             でONにできます。
           </p>
         ))}
-      <p className="mt-3">
-        <Link href="/me" className="underline underline-offset-2">
-          設定を開く
-        </Link>
-      </p>
+      {/* 設定への常設入り口はシェルのヘッダーに一本化したため、ここには
+          重複する「設定を開く」は置かない（操作性修正 2026-11-06）。
+          公開ページへの入り口は上の「公開ページを見る」がホーム内で唯一。 */}
     </div>
   );
 
@@ -301,40 +302,32 @@ export default function HomePanel({
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      {/* 1. 今日のマァスゥ（細い1行）＋今日のラッキースタンプ */}
-      <div className="shrink-0 px-4 pt-4">
+      {/* 1. 今日のマァスゥ＋今日のラッキースタンプ（操作性修正 2026-11-06:
+          帯を1行に圧縮し、ラッキースタンプは行内に小さく収める） */}
+      <div className="shrink-0 px-4 pt-3">
         <section
-          className="flex items-center gap-3 rounded-2xl px-3.5 py-2"
+          className="flex items-center gap-2.5 rounded-full py-1.5 pr-2 pl-3.5"
           style={{ background: "var(--accent-soft)" }}
         >
-          <div className="min-w-0 flex-1">
-            <span
-              className="block text-xs font-bold"
-              style={{ color: "var(--accent-strong)" }}
-            >
-              今日のマァスゥ
-            </span>
-            <span
-              className="block truncate text-xs"
-              style={{ color: "var(--text)" }}
-            >
-              マァ「{today.maa}」 スゥ「{today.suu}」
-            </span>
-          </div>
-          <div className="flex shrink-0 flex-col items-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={myLucky.src}
-              alt={myLucky.label}
-              className="h-10 w-10 object-contain"
-            />
-            <span
-              className="mt-0.5 text-[9px] font-bold whitespace-nowrap"
-              style={{ color: "var(--accent-strong)" }}
-            >
-              今日のラッキースタンプ
-            </span>
-          </div>
+          <span
+            className="shrink-0 text-[10px] font-bold whitespace-nowrap"
+            style={{ color: "var(--accent-strong)" }}
+          >
+            今日のマァスゥ
+          </span>
+          <span
+            className="min-w-0 flex-1 truncate text-xs"
+            style={{ color: "var(--text)" }}
+          >
+            マァ「{today.maa}」 スゥ「{today.suu}」
+          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={myLucky.src}
+            alt={myLucky.label}
+            title={`今日のラッキースタンプ：${myLucky.label}`}
+            className="h-7 w-7 shrink-0 object-contain"
+          />
         </section>
       </div>
 
@@ -355,7 +348,7 @@ export default function HomePanel({
       />
 
       {(activeViews.length > 0 || nextAction) && (
-        <div className="shrink-0 space-y-4 px-4 py-4">
+        <div className="shrink-0 space-y-3 px-4 py-3">
         {/* 3. いまの繋がり（ゼロ件なら出さない） */}
         {views !== null && activeViews.length > 0 && (
           <section>
@@ -388,7 +381,7 @@ export default function HomePanel({
                     <div className="rounded-2xl border" style={cardStyle}>
                     <Link
                       href={`/c/${v.conn.id}`}
-                      className="flex items-center gap-3 p-3"
+                      className="flex items-center gap-3 p-2.5"
                     >
                       {v.partner?.icon_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -564,16 +557,16 @@ export default function HomePanel({
 
         {/* 4. 次にやること */}
         {nextAction && (
-          <section className="rounded-2xl border p-4" style={cardStyle}>
+          <section className="rounded-2xl border p-3" style={cardStyle}>
             <h2 className="text-sm font-bold" style={{ color: "var(--muted)" }}>
               次にやること
             </h2>
-            <p className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+            <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
               {nextAction.note}
             </p>
             <Link
               href={nextAction.href}
-              className="mt-3 block rounded-full py-2.5 text-center text-sm font-bold text-white"
+              className="mt-2.5 block rounded-full py-2.5 text-center text-sm font-bold text-white"
               style={{ background: "var(--accent)" }}
             >
               {nextAction.label}

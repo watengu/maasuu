@@ -1,4 +1,4 @@
-import Link from "next/link";
+import BackButton from "../../back-button";
 
 // 利用規約（草案: 正式公開前に運営者が最終確認する）
 export const metadata = { title: "利用規約 | マァスゥ" };
@@ -65,9 +65,9 @@ export default function TermsPage() {
         </section>
       </div>
       <p className="mt-10 text-center text-xs">
-        <Link href="/" className="underline underline-offset-2">
+        <BackButton className="underline underline-offset-2">
           ホームへ戻る
-        </Link>
+        </BackButton>
       </p>
     </main>
   );

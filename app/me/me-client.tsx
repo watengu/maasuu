@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getSession, type Session } from "../auth-client";
 import AppHeader from "../app-header";
+import BackButton from "../back-button";
 import BannedScreen from "../banned-screen";
 import {
   generateIntroCode,
@@ -591,9 +592,13 @@ export default function MeClient() {
       <AppHeader />
       <main className="mx-auto w-full max-w-md flex-1 space-y-4 px-4 py-5">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-sm" style={{ color: "var(--muted)" }}>
+          <BackButton
+            className="text-sm"
+            style={{ color: "var(--muted)" }}
+            ariaLabel="もどる"
+          >
             ←
-          </Link>
+          </BackButton>
           <h1 className="text-base font-bold">設定</h1>
         </div>
         {notice && (

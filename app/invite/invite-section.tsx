@@ -190,7 +190,7 @@ export default function InviteSection({
   } as const;
 
   return (
-    <div className="space-y-4 px-4 py-5">
+    <div className="mt-4 space-y-4">
       {/* 冒頭: 3行要約（全文は畳んで残す） */}
       <div>
         <h2 className="text-sm font-bold" style={{ color: "var(--muted)" }}>

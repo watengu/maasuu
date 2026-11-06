@@ -6,10 +6,13 @@
 // 未ログインと未作成はトップ（シェル側で振り分け）へ戻し、BAN は専用画面を出す。
 // 中身（要約＋詳しく／作る／送る／状態の3段構成）は InviteSection が担う。
 // ゲストは招待を作れないため、案内だけを出す（旧タブでの扱いと同じ）。
+// ヘッダーは他ページと同じ AppHeader に統一する（操作性修正 2026-11-06）。
+// 戻る導線は共通の BackButton（履歴どおり戻る）で、大きめのボタンにする。
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getSession, type Session } from "../auth-client";
 import AppHeader from "../app-header";
+import BackButton from "../back-button";
 import BannedScreen from "../banned-screen";
 import InviteSection from "./invite-section";
 import { selectOne } from "../../lib/supabase";
@@ -74,15 +77,22 @@ export default function InviteClient() {
   return (
     <div className="flex min-h-screen flex-col">
       <AppHeader />
-      <main className="mx-auto w-full max-w-md flex-1">
-        <div className="flex items-center gap-3 px-4 pt-5">
-          <Link href="/" className="text-sm" style={{ color: "var(--muted)" }}>
-            ←
-          </Link>
+      <main className="mx-auto w-full max-w-md flex-1 px-4 py-5">
+        <div className="flex items-center gap-3">
+          <BackButton
+            className="flex min-h-[44px] items-center rounded-full border px-4 text-sm font-bold"
+            style={{
+              borderColor: "var(--line)",
+              background: "var(--surface)",
+              color: "var(--text)",
+            }}
+          >
+            ← もどる
+          </BackButton>
           <h1 className="text-base font-bold">紹介</h1>
         </div>
         {me.is_guest ? (
-          <div className="px-4 py-5">
+          <div className="mt-4">
             <div
               className="rounded-2xl border p-5 text-sm leading-relaxed"
               style={{ borderColor: "var(--line)", background: "var(--surface)" }}

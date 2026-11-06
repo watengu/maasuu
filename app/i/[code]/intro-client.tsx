@@ -17,6 +17,7 @@ import {
   signInWithGoogle,
   type Session,
 } from "../../auth-client";
+import BackButton from "../../back-button";
 import BannedScreen from "../../banned-screen";
 import { genreLabel } from "../../../lib/genres";
 import { rpc, selectOne } from "../../../lib/supabase";
@@ -376,9 +377,7 @@ export default function IntroClient() {
       <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
         <p className="text-sm">{phase.message}</p>
         <p className="mt-4 text-xs">
-          <Link href="/" className="underline">
-            ホームへ戻る
-          </Link>
+          <BackButton className="underline">ホームへ戻る</BackButton>
         </p>
       </main>
     );

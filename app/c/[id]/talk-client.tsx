@@ -8,6 +8,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getSession, type Session } from "../../auth-client";
+import BackButton from "../../back-button";
 import BannedScreen from "../../banned-screen";
 import {
   canSendText,
@@ -254,9 +255,7 @@ export default function TalkClient() {
       <main className="mx-auto w-full max-w-md px-4 py-24 text-center">
         <p className="text-sm">{errorMsg || "エラーが発生しました。"}</p>
         <p className="mt-4 text-xs">
-          <Link href="/" className="underline">
-            繋がり一覧へ戻る
-          </Link>
+          <BackButton className="underline">繋がり一覧へ戻る</BackButton>
         </p>
       </main>
     );
@@ -424,9 +423,13 @@ export default function TalkClient() {
       >
         <div className="mx-auto w-full max-w-md px-4 py-3">
           <div className="flex items-center gap-3">
-            <Link href="/" className="text-sm" style={{ color: "var(--muted)" }}>
+            <BackButton
+              className="text-sm"
+              style={{ color: "var(--muted)" }}
+              ariaLabel="もどる"
+            >
               ←
-            </Link>
+            </BackButton>
             {partner?.icon_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -727,13 +730,12 @@ export default function TalkClient() {
               から招待を作れます。
             </p>
             <div className="mt-3 flex items-center gap-4">
-              <Link
-                href="/"
+              <BackButton
                 className="rounded-full border px-4 py-2 text-xs font-bold"
                 style={{ borderColor: "var(--accent)", color: "var(--accent-strong)" }}
               >
                 つながり一覧へ戻る
-              </Link>
+              </BackButton>
               <button
                 type="button"
                 onClick={() => {
